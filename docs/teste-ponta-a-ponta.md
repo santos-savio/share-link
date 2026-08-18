@@ -13,7 +13,7 @@ dotnet run --urls "http://0.0.0.0:5012"
 No computador, **abra a aplicação pelo IP da rede, não por `localhost`**:
 
 ```
-http://192.168.1.77:5012/
+http://<IP-DA-MAQUINA>:5012/
 ```
 
 O QR code é montado a partir do endereço da página aberta. Abrindo por

@@ -12,7 +12,7 @@ O ShareLink resolve isso com um mini-chat temporário:
 2. A aplicação cria uma sessão e mostra um QR code.
 3. Você aponta a câmera do celular e abre o link.
 4. Os dois dispositivos passam a trocar mensagens em tempo real, nos dois sentidos.
-5. Quando a sessão é fechada (ou expira), o histórico é descartado — nada fica salvo.
+5. Quando a sessão expira por inatividade, o histórico é descartado — nada fica salvo.
 
 ## Fluxo
 
@@ -23,39 +23,32 @@ sequenceDiagram
     participant Cel as Celular
 
     PC->>Srv: Abre a aplicação
-    Srv-->>PC: Cria a sessão e devolve o QR code (URL + token)
+    Srv-->>PC: Cria a sessão e devolve o código
+    Note over PC: O navegador gera o QR code com a URL de entrada
     Cel->>Srv: Escaneia o QR e abre a URL
-    Srv-->>Cel: Associa o celular à mesma sessão
+    Srv-->>Cel: Associa o celular à mesma sessão e devolve o histórico recente
     Note over PC,Cel: Canal em tempo real estabelecido
     PC->>Srv: mensagem / link
     Srv-->>Cel: entrega imediata
     Cel->>Srv: mensagem / link
     Srv-->>PC: entrega imediata
-    Note over Srv: Sessão expira e o histórico é descartado
+    Note over Srv: Sessão ociosa expira e o histórico é descartado
 ```
 
-## Estado atual
+## Como funciona por dentro
 
-> ⚠️ Projeto em estágio inicial. Hoje existe apenas o esqueleto de uma aplicação ASP.NET Core Minimal API (`dotnet new web`) respondendo `Hello World!` na raiz. As seções abaixo descrevem como rodar esse esqueleto e o rumo pretendido.
-
-| Etapa | Situação |
-| --- | --- |
-| Esqueleto web (Minimal API, `net10.0`) | ✅ pronto |
-| Criação de sessão e geração do QR code | ⬜ pendente |
-| Canal em tempo real entre os dois dispositivos | ⬜ pendente |
-| Interface do computador e do celular | ⬜ pendente |
-| Expiração automática da sessão | ⬜ pendente |
-| Envio de arquivos e imagens | ⬜ a avaliar |
+- **ASP.NET Core Minimal API** com **SignalR**. O Group do SignalR nomeado com o código da sessão é o canal de entrega.
+- Como Groups do SignalR **não podem ser consultados** — não há API para perguntar se um grupo existe ou quem está nele —, um `SessionStore` em memória é a fonte de verdade sobre códigos válidos, participantes e última atividade.
+- O código de sessão tem 6 caracteres sorteados com `RandomNumberGenerator`, num alfabeto sem `0`, `O`, `1` e `I`, para poder ser digitado à mão quando a câmera falha.
+- Cada sessão guarda as **últimas 50 mensagens**, reenviadas a quem entra e a quem reconecta.
+- Ao entrar, o participante recebe um **token**. Reconectar cria uma conexão nova, que pode chegar antes de o servidor perceber a queda da anterior; o token é o que permite retomar o próprio lugar sem esbarrar na conexão morta, e sem afrouxar a recusa a um terceiro aparelho.
+- Nada é gravado em disco. Reiniciar o processo derruba todas as sessões.
 
 ## Requisitos
 
-- [.NET SDK 10.0](https://dotnet.microsoft.com/download) — o projeto tem como alvo `net10.0`.
+[.NET SDK 10.0](https://dotnet.microsoft.com/download) — o projeto tem como alvo `net10.0`. SignalR vem no framework compartilhado, não há pacote a instalar.
 
-```bash
-dotnet --version
-```
-
-## Como executar
+## Executar localmente
 
 ```bash
 dotnet run
@@ -67,54 +60,126 @@ Ou, com recarga automática a cada alteração:
 dotnet watch run
 ```
 
-Endereços de desenvolvimento (definidos em [launchSettings.json](Properties/launchSettings.json)):
+Endereços de desenvolvimento (em [launchSettings.json](Properties/launchSettings.json)): `http://localhost:5012` e `https://localhost:7012`. No VS Code também existem as tasks `build`, `publish` e `watch`.
 
-- HTTP — `http://localhost:5012`
-- HTTPS — `https://localhost:7012`
-
-No VS Code também existem as tasks `build`, `publish` e `watch`, além do perfil de depuração *.NET Core Launch (web)*.
-
-## Acessando pelo celular
-
-Para o QR code servir a algo, o celular precisa alcançar o servidor.
-
-**Mesma rede Wi-Fi** — publique em todas as interfaces e use o IP da máquina:
+## Usar com o celular na rede local
 
 ```bash
 dotnet run --urls "http://0.0.0.0:5012"
 ```
 
-Descubra o IP com `ipconfig` (Windows) ou `ip addr` (Linux/macOS). O QR code precisa apontar para `http://<IP-DA-MÁQUINA>:5012/...` — nunca para `localhost`, que no celular significa o próprio celular. Pode ser necessário liberar a porta no firewall do Windows.
+No computador, **abra a aplicação pelo IP da máquina, não por `localhost`**:
 
-**Fora da mesma rede** — use um túnel (Dev Tunnels, ngrok, Cloudflare Tunnel) e guarde a URL pública em `appsettings.Local.json`, que já está no `.gitignore`.
+```
+http://<IP-DA-MAQUINA>:5012/
+```
 
-Vale lembrar que recursos como câmera e área de transferência só ficam disponíveis no navegador sob HTTPS ou `localhost`; se a página do celular for usar a câmera, prefira HTTPS ou túnel.
+O QR code é montado a partir do endereço da página aberta. Abrindo por `localhost`, o QR carrega `localhost` — que no celular significa o próprio celular, e o pareamento falha sem explicação aparente. Descubra o IP com `ipconfig` (Windows) ou `ip addr` (Linux/macOS); na primeira execução o firewall deve pedir liberação da porta.
+
+## Configuração
+
+Seção `ShareLink` do [appsettings.json](appsettings.json). Qualquer chave pode ser sobrescrita na linha de comando, por exemplo `--ShareLink:SessionTimeoutMinutes=0.5`.
+
+| Chave | Padrão | O que faz |
+| --- | --- | --- |
+| `SessionTimeoutMinutes` | `30` | Inatividade que encerra a sessão. Janela **deslizante**: conversar renova. Aceita fração de minuto. |
+| `MaxMessagesPerSession` | `50` | Mensagens guardadas para reenviar a quem entra ou reconecta. |
+| `MaxMessageLength` | `2000` | Limite de caracteres por mensagem. |
+| `MaxGuestsPerSession` | `1` | Convidados simultâneos. O servidor aceita mais; a interface é escrita para dois participantes. |
+| `CleanupIntervalSeconds` | `60` | Intervalo entre varreduras de sessões expiradas. |
+
+Há ainda um limitador de requisições por IP, fixo no código: 20 consultas de código e 10 criações de sessão por minuto. É o que torna inviável varrer o espaço de códigos de 6 caracteres. O hub e os arquivos estáticos ficam fora do limitador.
+
+## Publicar atrás do nginx
+
+A aplicação funciona em subcaminho sem configuração especial: nenhuma URL do front-end começa com `/`, todas são resolvidas a partir do endereço da página. O que ela precisa é confiar nos headers do proxy, o que já está no pipeline via `UseForwardedHeaders` em [Program.cs](Program.cs) — a lista de proxies confiáveis fica no padrão, que cobre o nginx em loopback.
+
+O exemplo abaixo publica a aplicação em `/share-link/`. A configuração real desta instalação fica em `private/`, fora do versionamento.
+
+No **contexto `http`**, fora do `server`:
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+map $http_x_forwarded_proto $forwarded_proto {
+    default $http_x_forwarded_proto;
+    ''      $scheme;
+}
+```
+
+Dentro do `server`:
+
+```nginx
+location = /share-link {
+    return 301 /share-link/;
+}
+
+location /share-link/ {
+    proxy_pass http://127.0.0.1:5012/;
+
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade    $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
+    proxy_set_header Host               $host;
+    proxy_set_header X-Real-IP          $remote_addr;
+    proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto  $forwarded_proto;
+    proxy_set_header X-Forwarded-Prefix /share-link;
+
+    proxy_read_timeout 300s;
+}
+```
+
+Por que cada peça importa:
+
+- **A barra final em `proxy_pass`** remove o prefixo antes de repassar, então a aplicação recebe `/api/sessions` e `/hub/session`. Sem ela seria preciso um `UsePathBase` no código.
+- **O redirect de `/share-link` para `/share-link/`** não é cosmético: sem a barra, o navegador resolve os caminhos relativos um nível acima e o QR sairia apontando para fora da aplicação.
+- **`Connection` pelo `map`** em vez de `"upgrade"` fixo. Fixo, toda requisição comum — inclusive o long polling, para o qual o SignalR cai quando o WebSocket não passa — carrega um pedido de upgrade que não existe.
+- **`X-Forwarded-Proto` pelo `map`**. Usar `$http_x_forwarded_proto` direto envia o header **vazio** quando não há outro proxy na frente, e a aplicação continua enxergando `http`. Com o `map`, o valor cai para `$scheme` nesse caso e o repasse continua correto se um dia houver um proxy à frente.
+- **`proxy_read_timeout`** com folga. O SignalR envia keep-alive a cada 15 segundos, então os 60s padrão do nginx até sobrevivem; a folga evita quedas espúrias em rede ruim.
+- **`X-Forwarded-Prefix`** é enviado mas hoje a aplicação não o consome, porque o nginx já remove o prefixo e o front-end monta as URLs a partir de `window.location`. Fica pronto para o dia em que algo no servidor precise gerar link absoluto.
+
+Para conferir que o WebSocket subiu, veja no DevTools se a conexão do hub aparece como `101 Switching Protocols`. Se cair para long polling, os headers de upgrade não estão chegando.
+
+## Segurança e privacidade
+
+- **Quem tem o código entra.** Trate o QR como senha temporária: não o deixe em tela compartilhada nem em print. O limitador e a expiração cobrem a força bruta, não a exposição.
+- **Sem autenticação e sem contas.** A proteção é o código ser curto, secreto e de vida curta.
+- **Sem criptografia ponta a ponta.** O servidor lê as mensagens em memória. Publicado atrás do nginx com TLS, o transporte é cifrado.
+- **Nada é persistido.** As mensagens vivem no processo e somem com a sessão ou com o restart.
+- O texto recebido é sempre inserido com `textContent`, nunca `innerHTML`.
 
 ## Estrutura
 
 ```
 share-link/
-├─ .vscode/                     # tasks e configurações de depuração
-├─ Properties/
-│  └─ launchSettings.json       # perfis e portas de desenvolvimento
-├─ Program.cs                   # ponto de entrada (Minimal API)
-├─ ShareLink.csproj             # projeto (net10.0)
-├─ appsettings.json             # configuração da aplicação
-└─ .gitignore
+├─ Program.cs                      # pipeline, DI, endpoints HTTP, MapHub
+├─ Models/Session.cs               # Session, ChatMessage, papéis e tokens
+├─ Options/ShareLinkOptions.cs     # seção ShareLink do appsettings
+├─ Services/
+│  ├─ SessionCodeGenerator.cs      # código de 6 caracteres
+│  ├─ SessionStore.cs              # sessões vivas, em memória
+│  └─ SessionCleanupService.cs     # varredura das sessões expiradas
+├─ Hubs/
+│  ├─ SessionHub.cs                # entrada, saída e troca de mensagens
+│  └─ ISessionClient.cs            # contrato tipado do cliente
+├─ wwwroot/
+│  ├─ index.html                   # anfitrião: QR + chat
+│  ├─ join.html                    # convidado: entrada por código + chat
+│  ├─ css/app.css
+│  └─ js/{chat.js, host.js, guest.js}
+└─ docs/teste-ponta-a-ponta.md     # roteiro de verificação manual
 ```
 
-## Direção técnica
+O front-end não tem etapa de build: as duas bibliotecas (`@microsoft/signalr` e `qrcodejs`) vêm de CDN com `integrity`. Sem internet, o QR não é gerado — a tela avisa e o código continua válido para digitar — mas o chat não sobe.
 
-Decisões ainda em aberto, registradas aqui para orientar os próximos passos:
+## Teste
 
-- **Tempo real** — SignalR é o caminho natural em ASP.NET Core (WebSockets com fallback automático e reconexão pronta); WebSockets puros bastam se a ideia for manter o mínimo de dependências.
-- **QR code** — geração no servidor (por exemplo, com QRCoder, devolvendo PNG ou SVG) ou no próprio navegador via JavaScript.
-- **Sessões** — armazenamento em memória com TTL curto (`IMemoryCache` ou um dicionário concorrente). Enquanto o chat for efêmero, não há motivo para banco de dados.
-- **Pareamento** — o token da sessão viaja na URL do QR code; limitar a sessão a dois participantes e invalidar o token após o pareamento evita que um terceiro entre com o mesmo link.
-
-## Segurança e privacidade
-
-Quem tiver o link da sessão entra nela: trate o QR code como uma senha temporária e não o exponha em tela compartilhada ou em prints. As mensagens não são persistidas — vivem apenas enquanto a sessão existir.
+Não há projeto de testes automatizados. A verificação é o roteiro manual em [docs/teste-ponta-a-ponta.md](docs/teste-ponta-a-ponta.md), que deve rodar inteiro antes de qualquer mudança no pareamento, no tempo real ou no ciclo de vida da sessão.
 
 ## Licença
 
