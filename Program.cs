@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using ShareLink.Hubs;
@@ -34,6 +35,19 @@ builder.Services.AddRateLimiter(limiter =>
 
 var app = builder.Build();
 
+// Primeiro middleware do pipeline, para que todo o resto já enxergue o cliente
+// real. Sem isto o ASP.NET Core ignora o que o nginx envia: o esquema continua
+// http e o endereço de origem é o do próprio proxy, o que jogaria todos os
+// clientes no mesmo balde do limitador acima.
+//
+// A lista de proxies confiáveis fica no padrão, que cobre o nginx em loopback.
+// Aceitar X-Forwarded-For de qualquer origem permitiria forjar o IP de origem
+// e, com isso, contornar o limitador.
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
+
 app.UseRateLimiter();
 
 // Interface web em wwwroot: "/" entrega index.html.
@@ -64,8 +78,8 @@ app.MapHub<SessionHub>("/hub/session");
 
 app.Run();
 
-// Atrás de proxy reverso, este endereço só é o do cliente de verdade depois do
-// middleware de ForwardedHeaders, que entra no pipeline na etapa seguinte.
+// Atrás do proxy, este já é o endereço do cliente e não o do nginx, porque o
+// middleware de ForwardedHeaders roda antes de tudo.
 static string ClientKey(HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "desconhecido";
 
 internal sealed record CreateSessionResponse(string Code, int ExpiresInSeconds);
