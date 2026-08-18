@@ -154,10 +154,18 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  min-height: 12rem;
+  /* Sem altura mínima: a lista cresce com o que existe. Reservar espaço vazio
+     empurrava o QR para fora da tela antes do pareamento. */
   max-height: 60vh;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* Vazia, a lista sai do fluxo por completo — inclusive o gap que a separa do
+   compositor. Antes do primeiro envio não há o que mostrar, e assim o QR, o
+   código e o campo de mensagem cabem na mesma tela. */
+.messages:empty {
+  display: none;
 }
 
 .message {
