@@ -1,0 +1,245 @@
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --border: #d9dce1;
+  --text: #1c1f23;
+  --muted: #6b7280;
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --peer: #eceef1;
+  --danger: #b42318;
+  --ok: #067647;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171a;
+    --surface: #1e2126;
+    --border: #32373e;
+    --text: #e8eaed;
+    --muted: #9aa1ab;
+    --accent: #3b82f6;
+    --accent-text: #ffffff;
+    --peer: #2a2f36;
+    --danger: #f97066;
+    --ok: #47cd89;
+  }
+}
+
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  padding: 1rem;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.app {
+  max-width: 32rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.01em;
+}
+
+.status {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.status::before {
+  content: "";
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.375rem;
+  border-radius: 50%;
+  background: var(--muted);
+  vertical-align: baseline;
+}
+
+.status[data-state="online"]::before { background: var(--ok); }
+.status[data-state="offline"]::before { background: var(--danger); }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+/* Pareamento -------------------------------------------------------------- */
+
+.pairing { text-align: center; }
+
+.pairing .qr {
+  display: inline-flex;
+  padding: 0.75rem;
+  background: #ffffff;
+  border-radius: 0.5rem;
+}
+
+.pairing .qr img, .pairing .qr canvas { display: block; }
+
+.hint {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.code {
+  margin: 0;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: 0.25em;
+  text-indent: 0.25em;
+}
+
+.join-url {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  word-break: break-all;
+}
+
+.join-url a { color: var(--muted); }
+
+.paired-note {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: var(--ok);
+}
+
+/* Com o celular pareado o QR sai da frente e o chat ganha a tela. */
+.pairing.paired .qr,
+.pairing.paired .hint,
+.pairing.paired .code,
+.pairing.paired .join-url { display: none; }
+
+.pairing:not(.paired) .paired-note { display: none; }
+
+/* Chat -------------------------------------------------------------------- */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 12rem;
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.message {
+  max-width: 85%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--peer);
+}
+
+.message.mine {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.message.system {
+  align-self: center;
+  max-width: 100%;
+  padding: 0.125rem 0;
+  background: none;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.message-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message time {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  opacity: 0.7;
+}
+
+.message.system time { display: none; }
+
+.composer {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.composer input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.625rem 0.75rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.composer input:focus-visible,
+.composer button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.composer button {
+  padding: 0.625rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.composer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error {
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-radius: 0.5rem;
+}

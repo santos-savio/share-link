@@ -11,7 +11,9 @@ builder.Services.AddSignalR();
 
 var app = builder.Build();
 
-app.MapGet("/", () => "Olá mundo");
+// Interface web em wwwroot: "/" entrega index.html.
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 // Cria a sessão que o anfitrião vai transformar em QR code.
 app.MapPost("/api/sessions", (SessionStore store, IOptions<ShareLinkOptions> options) =>

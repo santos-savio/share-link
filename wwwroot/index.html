@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShareLink</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>ShareLink</h1>
+      <p class="status" id="status" data-state="connecting">iniciando…</p>
+    </header>
+
+    <section class="panel pairing" id="pairing">
+      <div class="qr" id="qr" aria-label="QR code para parear o celular"></div>
+      <p class="hint">Escaneie com o celular, ou digite o código na página de entrada:</p>
+      <p class="code" id="code">······</p>
+      <p class="join-url"><a id="join-url" href="#"></a></p>
+      <p class="paired-note">Celular conectado.</p>
+    </section>
+
+    <p class="error" id="error" hidden></p>
+
+    <section class="chat" id="chat" hidden>
+      <ol class="messages" id="messages" aria-live="polite"></ol>
+      <form class="composer" id="composer" autocomplete="off">
+        <input id="text" type="text" maxlength="2000" placeholder="Escreva uma mensagem" aria-label="Mensagem">
+        <button type="submit">Enviar</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+          integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSQX0FslNhTDadL4O5SAGapGt4FodqL8My0mA=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/10.0.11/signalr.min.js"
+          integrity="sha512-zV6tEyYm1c6KHVZUHmZUDIM/mWFZ5nHt08kt682k98cvUMAHTyJ0ZQkv2Q+KWIbbwN0wnboWYEvqbOztWwlMpg=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script type="module" src="js/host.js"></script>
+</body>
+</html>
