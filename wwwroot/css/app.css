@@ -243,3 +243,60 @@ body {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   border-radius: 0.5rem;
 }
+
+/* Entrada do convidado ---------------------------------------------------- */
+
+.join { text-align: center; }
+
+.join .hint { display: block; margin-top: 0; }
+
+.join-form {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.code-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 11rem;
+  padding: 0.625rem 0.5rem;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 1.5rem;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
+  text-transform: uppercase;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.join-form button {
+  padding: 0.625rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.join-form button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.code-input:focus-visible,
+.join-form button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.peer-note {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ok);
+}
+
+.peer-note.offline { color: var(--muted); }

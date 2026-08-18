@@ -107,7 +107,15 @@ export async function startChat({ code, role, onPeerChange }) {
   setStatus('connecting', 'conectando…');
   await connection.start();
 
-  const result = await connection.invoke('JoinSession', code, role);
+  let result;
+
+  try {
+    result = await connection.invoke('JoinSession', code, role);
+  } catch (error) {
+    // Sem isto, cada tentativa recusada deixaria uma conexão pendurada.
+    await connection.stop();
+    throw error;
+  }
 
   result.messages.forEach(message => appendMessage(message, role));
   onPeerChange?.(result.peerConnected);

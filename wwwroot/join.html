@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShareLink — entrar</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>ShareLink</h1>
+      <p class="status" id="status" data-state="connecting">…</p>
+    </header>
+
+    <section class="panel join" id="join">
+      <label class="hint" for="join-code">Código exibido no computador</label>
+      <form class="join-form" id="join-form" autocomplete="off">
+        <input id="join-code" class="code-input" type="text" maxlength="6" required
+               placeholder="ABC234" aria-label="Código da sessão"
+               autocapitalize="characters" autocorrect="off" spellcheck="false">
+        <button type="submit" id="join-submit">Entrar</button>
+      </form>
+    </section>
+
+    <p class="peer-note" id="peer-note" hidden></p>
+
+    <p class="error" id="error" hidden></p>
+
+    <section class="chat" id="chat" hidden>
+      <ol class="messages" id="messages" aria-live="polite"></ol>
+      <form class="composer" id="composer" autocomplete="off">
+        <input id="text" type="text" maxlength="2000" placeholder="Escreva uma mensagem" aria-label="Mensagem">
+        <button type="submit">Enviar</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/10.0.11/signalr.min.js"
+          integrity="sha512-zV6tEyYm1c6KHVZUHmZUDIM/mWFZ5nHt08kt682k98cvUMAHTyJ0ZQkv2Q+KWIbbwN0wnboWYEvqbOztWwlMpg=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script type="module" src="js/guest.js"></script>
+</body>
+</html>
