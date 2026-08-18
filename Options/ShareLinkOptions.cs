@@ -8,7 +8,7 @@ public sealed class ShareLinkOptions
     public const string SectionName = "ShareLink";
 
     /// <summary>Tempo de inatividade após o qual a sessão é descartada. Janela deslizante: renova a cada mensagem ou entrada.</summary>
-    public int SessionTimeoutMinutes { get; set; } = 30;
+    public double SessionTimeoutMinutes { get; set; } = 30;
 
     /// <summary>Quantas mensagens recentes a sessão guarda para reenviar a quem entra ou reconecta.</summary>
     public int MaxMessagesPerSession { get; set; } = 50;

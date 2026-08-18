@@ -5,6 +5,7 @@
 const elements = {
   status: document.getElementById('status'),
   reconnect: document.getElementById('reconnect'),
+  restart: document.getElementById('restart'),
   chat: document.getElementById('chat'),
   messages: document.getElementById('messages'),
   composer: document.getElementById('composer'),
@@ -146,6 +147,7 @@ export async function startChat({ code, role, onPeerChange }) {
     setStatus('offline', 'sessão encerrada');
     elements.composer.hidden = true;
     elements.reconnect.hidden = true;
+    elements.restart.hidden = false;
     forgetToken(code, role);
     joined = false;
   });

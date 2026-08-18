@@ -7,6 +7,9 @@ const qrBox = document.getElementById('qr');
 const codeBox = document.getElementById('code');
 const joinLink = document.getElementById('join-url');
 
+// Sessão expirada: recarregar a página do anfitrião abre outra do zero.
+document.getElementById('restart').addEventListener('click', () => window.location.reload());
+
 async function main() {
   setStatus('connecting', 'criando sessão…');
 

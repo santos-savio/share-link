@@ -8,6 +8,9 @@ const codeInput = document.getElementById('join-code');
 const submitButton = document.getElementById('join-submit');
 const peerNote = document.getElementById('peer-note');
 
+// Sessão expirada: recomeça pelo formulário, sem o código velho pendurado na URL.
+document.getElementById('restart').addEventListener('click', () => { window.location.search = ''; });
+
 /**
  * Confere o código por HTTP antes de abrir a conexão em tempo real. É daqui
  * que sai a mensagem precisa de erro: o texto que o hub devolveria vem
