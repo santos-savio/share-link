@@ -8,8 +8,12 @@ const codeInput = document.getElementById('join-code');
 const submitButton = document.getElementById('join-submit');
 const peerNote = document.getElementById('peer-note');
 
-// Sessão expirada: recomeça pelo formulário, sem o código velho pendurado na URL.
-document.getElementById('restart').addEventListener('click', () => { window.location.search = ''; });
+// Sessão expirada: recomeça pelo formulário, sem o código velho pendurado na
+// URL. Tem de ser replace: atribuir a search recarrega quando havia query, mas
+// não faz nada para quem entrou digitando o código, que já está sem ela.
+document.getElementById('restart').addEventListener('click', () => {
+  window.location.replace(window.location.pathname);
+});
 
 /**
  * Confere o código por HTTP antes de abrir a conexão em tempo real. É daqui
@@ -21,6 +25,10 @@ async function validate(code) {
 
   if (response.status === 404) {
     throw new Error('Código não encontrado. A sessão pode ter expirado.');
+  }
+
+  if (response.status === 429) {
+    throw new Error('Muitas tentativas neste minuto. Espere um pouco e tente de novo.');
   }
 
   if (!response.ok) {

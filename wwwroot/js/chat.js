@@ -105,6 +105,12 @@ const roleLabel = role => (role === 'host' ? 'O computador' : 'O celular');
  * @param {{code: string, role: 'host'|'guest', onPeerChange?: (present: boolean) => void}} params
  */
 export async function startChat({ code, role, onPeerChange }) {
+  // As bibliotecas vêm de CDN: sem internet ou com o CDN fora, o erro nativo
+  // seria "signalR is not defined", que não diz nada a quem está usando.
+  if (typeof signalR === 'undefined') {
+    throw new Error('A biblioteca de tempo real não carregou. Verifique a conexão com a internet e recarregue a página.');
+  }
+
   let token = recallToken(code, role);
   let joined = false;
 
@@ -171,6 +177,21 @@ export async function startChat({ code, role, onPeerChange }) {
     if (joined) elements.reconnect.hidden = false;
   });
 
+  setStatus('connecting', 'conectando…');
+  await connection.start();
+
+  try {
+    await joinAndRender();
+  } catch (error) {
+    // Sem isto, cada tentativa recusada deixaria uma conexão pendurada.
+    await connection.stop();
+    throw error;
+  }
+
+  elements.chat.hidden = false;
+
+  // Registrados só depois da entrada bem-sucedida: uma tentativa recusada pode
+  // ser repetida, e listeners acumulados disparariam a ação mais de uma vez.
   elements.reconnect.addEventListener('click', async () => {
     elements.reconnect.disabled = true;
     setStatus('connecting', 'reconectando…');
@@ -185,19 +206,6 @@ export async function startChat({ code, role, onPeerChange }) {
       elements.reconnect.disabled = false;
     }
   });
-
-  setStatus('connecting', 'conectando…');
-  await connection.start();
-
-  try {
-    await joinAndRender();
-  } catch (error) {
-    // Sem isto, cada tentativa recusada deixaria uma conexão pendurada.
-    await connection.stop();
-    throw error;
-  }
-
-  elements.chat.hidden = false;
 
   elements.composer.addEventListener('submit', async event => {
     event.preventDefault();
