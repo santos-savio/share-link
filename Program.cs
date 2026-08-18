@@ -14,7 +14,14 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<ShareLinkOptions>(builder.Configuration.GetSection(ShareLinkOptions.SectionName));
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddHostedService<SessionCleanupService>();
-builder.Services.AddSignalR();
+
+builder.Services.AddSignalR(options =>
+{
+    // Em desenvolvimento, o motivo real chega ao console do navegador em vez de
+    // "an error on the server". Em produção continua escondido, para não expor
+    // detalhes de exceção a quem chama.
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+});
 
 // Consultar códigos é o único caminho para varrer o espaço de 6 caracteres.
 // Uma janela curta por IP torna a varredura inviável e mantém o código curto o
@@ -52,7 +59,21 @@ app.UseRateLimiter();
 
 // Interface web em wwwroot: "/" entrega index.html.
 app.UseDefaultFiles();
-app.UseStaticFiles();
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        // "no-cache" não quer dizer "não guarde", e sim "revalide antes de
+        // usar" — com ETag isso custa um 304. Sem a diretiva, o navegador
+        // aplica cache heurístico e pode rodar um JS antigo contra um servidor
+        // novo. É o que produz "Failed to invoke 'JoinSession' due to an error
+        // on the server": a página em cache chama o hub com a assinatura de
+        // outra versão. São poucos kilobytes de arquivo; a revalidação é barata
+        // perto de um cliente desatualizado que só falha na hora de parear.
+        context.Context.Response.Headers.CacheControl = "no-cache";
+    }
+});
 
 // Cria a sessão que o anfitrião vai transformar em QR code.
 app.MapPost("/api/sessions", (SessionStore store, IOptions<ShareLinkOptions> options) =>

@@ -29,7 +29,19 @@ export function hubErrorMessage(error) {
   const raw = error?.message ?? String(error);
   const marker = 'HubException: ';
   const at = raw.indexOf(marker);
-  return at >= 0 ? raw.slice(at + marker.length) : raw;
+
+  if (at >= 0) return raw.slice(at + marker.length);
+
+  // Esta frase é a falha de vinculação de argumentos do SignalR, e na prática
+  // significa uma coisa só: a página em cache está chamando o hub com a
+  // assinatura de outra versão.
+  if (raw.includes('due to an error on the server')) {
+    return 'Esta página está desatualizada em relação ao servidor. '
+      + 'Recarregue forçando a atualização (Ctrl+Shift+R no computador; '
+      + 'no celular, feche a aba e abra de novo).';
+  }
+
+  return raw;
 }
 
 export function setStatus(state, label) {
