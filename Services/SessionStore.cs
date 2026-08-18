@@ -39,12 +39,6 @@ public sealed class SessionStore(IOptions<ShareLinkOptions> options, ILogger<Ses
     public bool TryGet(string? code, [NotNullWhen(true)] out Session? session)
         => _sessions.TryGetValue(Normalize(code), out session);
 
-    /// <summary>Valida o código e registra a conexão no papel pedido, numa única operação.</summary>
-    public JoinOutcome TryAddParticipant(string? code, ParticipantRole role, string connectionId, out Session? session)
-        => TryGet(code, out session)
-            ? session.TryAddParticipant(role, connectionId)
-            : JoinOutcome.SessionNotFound;
-
     /// <summary>
     /// Descobre a sessão de uma conexão que caiu e a remove de lá. São poucas
     /// sessões simultâneas, então varrer o dicionário sai mais barato que manter

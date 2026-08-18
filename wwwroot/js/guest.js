@@ -1,6 +1,6 @@
 // Tela do celular: entra numa sessão existente pelo código do QR ou digitado.
 
-import { startChat, setStatus, showError, clearError, hubErrorMessage } from './chat.js';
+import { startChat, setStatus, showError, clearError, hubErrorMessage, hasStoredToken } from './chat.js';
 
 const joinPanel = document.getElementById('join');
 const joinForm = document.getElementById('join-form');
@@ -26,7 +26,9 @@ async function validate(code) {
 
   const session = await response.json();
 
-  if (session.hasGuest) {
+  // Com token guardado, o convidado registrado somos nós numa conexão anterior:
+  // recarregar a página retoma o lugar em vez de esbarrar nele.
+  if (session.hasGuest && !hasStoredToken(session.code, 'guest')) {
     throw new Error('Esta sessão já está em uso por outro aparelho.');
   }
 

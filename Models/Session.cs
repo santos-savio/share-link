@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace ShareLink.Models;
 
 /// <summary>Papel de um participante dentro da sessão.</summary>
@@ -11,7 +13,6 @@ public enum ParticipantRole
 public enum JoinOutcome
 {
     Success,
-    SessionNotFound,
     RoleFull
 }
 
@@ -30,12 +31,16 @@ public sealed record ChatMessage(string Id, string Sender, string Text, DateTime
 public sealed class Session
 {
     private readonly Lock _sync = new();
-    private readonly HashSet<string> _guestConnectionIds = [];
+
+    /// <summary>Convidados vivos, indexados pelo token do participante.</summary>
+    private readonly Dictionary<string, string> _guestsByToken = [];
+
     private readonly Queue<ChatMessage> _recentMessages = new();
     private readonly int _maxMessages;
     private readonly int _maxGuests;
 
     private string? _hostConnectionId;
+    private string? _hostToken;
     private DateTimeOffset _lastActivityAt;
 
     public Session(string code, int maxMessages, int maxGuests)
@@ -63,7 +68,7 @@ public sealed class Session
 
     public bool HasGuest
     {
-        get { lock (_sync) return _guestConnectionIds.Count > 0; }
+        get { lock (_sync) return _guestsByToken.Count > 0; }
     }
 
     /// <summary>Renova a janela de inatividade.</summary>
@@ -78,30 +83,48 @@ public sealed class Session
     }
 
     /// <summary>
-    /// Registra uma conexão no papel pedido. Reentrar com a mesma conexão é
-    /// idempotente, o que simplifica a rejunção após reconexão.
+    /// Registra uma conexão no papel pedido e devolve o token do participante.
     /// </summary>
-    public JoinOutcome TryAddParticipant(ParticipantRole role, string connectionId)
+    /// <param name="token">
+    /// Token recebido numa entrada anterior. Reconectar gera um ConnectionId
+    /// novo, e o servidor pode ainda não ter processado a queda do anterior: é o
+    /// token que autoriza retomar o próprio slot em vez de esbarrar nele.
+    /// </param>
+    public JoinOutcome TryAddParticipant(ParticipantRole role, string connectionId, string? token, out string? issuedToken)
     {
         lock (_sync)
         {
             if (role is ParticipantRole.Host)
             {
-                if (_hostConnectionId is not null && _hostConnectionId != connectionId)
+                var reclaiming = token is not null && token == _hostToken;
+
+                if (_hostConnectionId is not null && _hostConnectionId != connectionId && !reclaiming)
                 {
+                    issuedToken = null;
                     return JoinOutcome.RoleFull;
                 }
 
                 _hostConnectionId = connectionId;
+                _hostToken = reclaiming ? token : token ?? NewToken();
+                issuedToken = _hostToken;
             }
             else
             {
-                if (!_guestConnectionIds.Contains(connectionId) && _guestConnectionIds.Count >= _maxGuests)
+                if (token is not null && _guestsByToken.ContainsKey(token))
                 {
+                    _guestsByToken[token] = connectionId;
+                    issuedToken = token;
+                }
+                else if (_guestsByToken.Count < _maxGuests)
+                {
+                    issuedToken = token ?? NewToken();
+                    _guestsByToken[issuedToken] = connectionId;
+                }
+                else
+                {
+                    issuedToken = null;
                     return JoinOutcome.RoleFull;
                 }
-
-                _guestConnectionIds.Add(connectionId);
             }
 
             _lastActivityAt = DateTimeOffset.UtcNow;
@@ -109,6 +132,11 @@ public sealed class Session
         }
     }
 
+    /// <summary>
+    /// Libera o slot de uma conexão que caiu. Uma conexão já substituída por
+    /// reconexão não consta mais aqui, então a queda tardia dela é ignorada e
+    /// ninguém recebe um "saiu" indevido.
+    /// </summary>
     public bool TryRemoveConnection(string connectionId, out ParticipantRole role)
     {
         lock (_sync)
@@ -116,24 +144,24 @@ public sealed class Session
             if (_hostConnectionId == connectionId)
             {
                 _hostConnectionId = null;
+                _hostToken = null;
                 role = ParticipantRole.Host;
                 return true;
             }
 
-            if (_guestConnectionIds.Remove(connectionId))
+            foreach (var (guestToken, guestConnectionId) in _guestsByToken)
             {
-                role = ParticipantRole.Guest;
-                return true;
+                if (guestConnectionId == connectionId)
+                {
+                    _guestsByToken.Remove(guestToken);
+                    role = ParticipantRole.Guest;
+                    return true;
+                }
             }
 
             role = default;
             return false;
         }
-    }
-
-    public bool HasConnection(string connectionId)
-    {
-        lock (_sync) return _hostConnectionId == connectionId || _guestConnectionIds.Contains(connectionId);
     }
 
     /// <summary>
@@ -150,7 +178,7 @@ public sealed class Session
                 return true;
             }
 
-            if (_guestConnectionIds.Contains(connectionId))
+            if (_guestsByToken.ContainsValue(connectionId))
             {
                 role = ParticipantRole.Guest;
                 return true;
@@ -190,15 +218,17 @@ public sealed class Session
     {
         lock (_sync)
         {
-            var ids = new List<string>(_guestConnectionIds.Count + 1);
+            var ids = new List<string>(_guestsByToken.Count + 1);
 
             if (_hostConnectionId is not null)
             {
                 ids.Add(_hostConnectionId);
             }
 
-            ids.AddRange(_guestConnectionIds);
+            ids.AddRange(_guestsByToken.Values);
             return ids;
         }
     }
+
+    private static string NewToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
 }

@@ -26,8 +26,13 @@ public interface ISessionClient
 /// conversa depois de uma reconexão, e <paramref name="PeerConnected"/> diz se
 /// o outro lado já está presente.
 /// </summary>
+/// <param name="Token">
+/// Credencial do participante. O cliente guarda e reapresenta ao reconectar,
+/// para retomar o próprio slot em vez de ser recusado como um terceiro.
+/// </param>
 public sealed record JoinSessionResult(
     string Code,
     string Role,
+    string Token,
     bool PeerConnected,
     IReadOnlyList<ChatMessage> Messages);

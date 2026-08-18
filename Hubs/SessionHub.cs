@@ -22,17 +22,21 @@ public sealed class SessionHub(
     /// Entra na sessão no papel pedido. Também é o caminho da rejunção depois de
     /// uma reconexão, por isso devolve o histórico recente junto.
     /// </summary>
-    public async Task<JoinSessionResult> JoinSession(string code, string role)
+    /// <param name="token">
+    /// Token devolvido numa entrada anterior, ou null na primeira. Quem reconecta
+    /// chega com ConnectionId novo antes de o servidor notar a queda do antigo; o
+    /// token é o que permite retomar o próprio slot em vez de esbarrar nele.
+    /// </param>
+    public async Task<JoinSessionResult> JoinSession(string code, string role, string? token)
     {
         var participantRole = ParseRole(role);
-        var outcome = store.TryAddParticipant(code, participantRole, Context.ConnectionId, out var session);
 
-        if (outcome is JoinOutcome.SessionNotFound || session is null)
+        if (!store.TryGet(code, out var session))
         {
             throw new HubException("Sessão não encontrada ou expirada.");
         }
 
-        if (outcome is JoinOutcome.RoleFull)
+        if (session.TryAddParticipant(participantRole, Context.ConnectionId, token, out var issuedToken) is JoinOutcome.RoleFull)
         {
             throw new HubException(participantRole is ParticipantRole.Host
                 ? "Esta sessão já tem um anfitrião."
@@ -47,7 +51,12 @@ public sealed class SessionHub(
 
         var peerConnected = participantRole is ParticipantRole.Host ? session.HasGuest : session.HasHost;
 
-        return new JoinSessionResult(session.Code, RoleName(participantRole), peerConnected, session.SnapshotMessages());
+        return new JoinSessionResult(
+            session.Code,
+            RoleName(participantRole),
+            issuedToken!,
+            peerConnected,
+            session.SnapshotMessages());
     }
 
     /// <summary>Publica uma mensagem para os dois lados da sessão.</summary>

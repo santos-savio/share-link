@@ -10,7 +10,10 @@
   <main class="app">
     <header class="app-header">
       <h1>ShareLink</h1>
-      <p class="status" id="status" data-state="connecting">iniciando…</p>
+      <div class="header-actions">
+        <p class="status" id="status" data-state="connecting">iniciando…</p>
+        <button type="button" class="reconnect" id="reconnect" hidden>Reconectar</button>
+      </div>
     </header>
 
     <section class="panel pairing" id="pairing">

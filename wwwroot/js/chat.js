@@ -4,12 +4,16 @@
 
 const elements = {
   status: document.getElementById('status'),
+  reconnect: document.getElementById('reconnect'),
   chat: document.getElementById('chat'),
   messages: document.getElementById('messages'),
   composer: document.getElementById('composer'),
   text: document.getElementById('text'),
   error: document.getElementById('error')
 };
+
+/** Ids já desenhados na tela: o histórico volta inteiro a cada rejunção. */
+const renderedMessageIds = new Set();
 
 /** Endereço do hub relativo a esta página. */
 export function hubUrl() {
@@ -42,6 +46,22 @@ export function clearError() {
   elements.error.textContent = '';
 }
 
+// O token identifica o participante entre conexões. Fica em sessionStorage
+// (escopo da aba) para que recarregar a página também retome o mesmo lugar.
+const tokenKey = (code, role) => `sharelink:${code}:${role}`;
+
+function rememberToken(code, role, token) {
+  try { sessionStorage.setItem(tokenKey(code, role), token); } catch { /* navegação privada */ }
+}
+
+function recallToken(code, role) {
+  try { return sessionStorage.getItem(tokenKey(code, role)); } catch { return null; }
+}
+
+function forgetToken(code, role) {
+  try { sessionStorage.removeItem(tokenKey(code, role)); } catch { /* navegação privada */ }
+}
+
 function scrollToEnd() {
   elements.messages.scrollTop = elements.messages.scrollHeight;
 }
@@ -55,6 +75,10 @@ function appendSystemLine(text) {
 }
 
 function appendMessage(message, myRole) {
+  // Conciliação por id: o que já está na tela não entra de novo.
+  if (renderedMessageIds.has(message.id)) return;
+  renderedMessageIds.add(message.id);
+
   const item = document.createElement('li');
   item.className = message.sender === myRole ? 'message mine' : 'message';
 
@@ -80,9 +104,30 @@ const roleLabel = role => (role === 'host' ? 'O computador' : 'O celular');
  * @param {{code: string, role: 'host'|'guest', onPeerChange?: (present: boolean) => void}} params
  */
 export async function startChat({ code, role, onPeerChange }) {
+  let token = recallToken(code, role);
+  let joined = false;
+
   const connection = new signalR.HubConnectionBuilder()
     .withUrl(hubUrl())
+    .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
     .build();
+
+  async function joinAndRender() {
+    const result = await connection.invoke('JoinSession', code, role, token);
+
+    token = result.token;
+    rememberToken(code, role, token);
+
+    result.messages.forEach(message => appendMessage(message, role));
+    onPeerChange?.(result.peerConnected);
+
+    joined = true;
+    elements.reconnect.hidden = true;
+    setStatus('online', 'conectado');
+    clearError();
+
+    return result;
+  }
 
   connection.on('ReceiveMessage', message => appendMessage(message, role));
 
@@ -100,29 +145,57 @@ export async function startChat({ code, role, onPeerChange }) {
     appendSystemLine(`Sessão encerrada: ${reason}`);
     setStatus('offline', 'sessão encerrada');
     elements.composer.hidden = true;
+    elements.reconnect.hidden = true;
+    forgetToken(code, role);
+    joined = false;
   });
 
-  connection.onclose(() => setStatus('offline', 'desconectado'));
+  connection.onreconnecting(() => setStatus('connecting', 'reconectando…'));
+
+  // A reconexão traz um ConnectionId novo, que não pertence a grupo nenhum.
+  // Sem entrar outra vez, a conexão volta "viva" e o chat morre em silêncio.
+  connection.onreconnected(async () => {
+    try {
+      await joinAndRender();
+    } catch (error) {
+      showError(hubErrorMessage(error));
+      setStatus('offline', 'desconectado');
+      await connection.stop();
+    }
+  });
+
+  connection.onclose(() => {
+    setStatus('offline', 'desconectado');
+    if (joined) elements.reconnect.hidden = false;
+  });
+
+  elements.reconnect.addEventListener('click', async () => {
+    elements.reconnect.disabled = true;
+    setStatus('connecting', 'reconectando…');
+
+    try {
+      await connection.start();
+      await joinAndRender();
+    } catch (error) {
+      setStatus('offline', 'desconectado');
+      showError(hubErrorMessage(error));
+    } finally {
+      elements.reconnect.disabled = false;
+    }
+  });
 
   setStatus('connecting', 'conectando…');
   await connection.start();
 
-  let result;
-
   try {
-    result = await connection.invoke('JoinSession', code, role);
+    await joinAndRender();
   } catch (error) {
     // Sem isto, cada tentativa recusada deixaria uma conexão pendurada.
     await connection.stop();
     throw error;
   }
 
-  result.messages.forEach(message => appendMessage(message, role));
-  onPeerChange?.(result.peerConnected);
-
   elements.chat.hidden = false;
-  setStatus('online', 'conectado');
-  clearError();
 
   elements.composer.addEventListener('submit', async event => {
     event.preventDefault();
@@ -133,7 +206,7 @@ export async function startChat({ code, role, onPeerChange }) {
     elements.text.value = '';
 
     try {
-      await connection.invoke('SendMessage', result.code, text);
+      await connection.invoke('SendMessage', code, text);
       clearError();
     } catch (error) {
       // Devolve o texto ao campo para que nada se perca.
@@ -144,4 +217,9 @@ export async function startChat({ code, role, onPeerChange }) {
 
   elements.text.focus();
   return connection;
+}
+
+/** Há token guardado para este papel nesta sessão? Indica retomada, não entrada nova. */
+export function hasStoredToken(code, role) {
+  return recallToken(code, role) !== null;
 }

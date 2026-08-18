@@ -300,3 +300,30 @@ body {
 }
 
 .peer-note.offline { color: var(--muted); }
+
+/* Estado da conexão ------------------------------------------------------- */
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.reconnect {
+  padding: 0.25rem 0.625rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.reconnect:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.reconnect:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
