@@ -136,6 +136,31 @@ public sealed class Session
         lock (_sync) return _hostConnectionId == connectionId || _guestConnectionIds.Contains(connectionId);
     }
 
+    /// <summary>
+    /// Descobre em que papel a conexão está registrada. É assim que o servidor
+    /// carimba o remetente de uma mensagem, sem depender do que o cliente diz.
+    /// </summary>
+    public bool TryGetRole(string connectionId, out ParticipantRole role)
+    {
+        lock (_sync)
+        {
+            if (_hostConnectionId == connectionId)
+            {
+                role = ParticipantRole.Host;
+                return true;
+            }
+
+            if (_guestConnectionIds.Contains(connectionId))
+            {
+                role = ParticipantRole.Guest;
+                return true;
+            }
+
+            role = default;
+            return false;
+        }
+    }
+
     /// <summary>Guarda a mensagem no buffer recente, descartando as mais antigas além do teto.</summary>
     public ChatMessage AppendMessage(string sender, string text)
     {
