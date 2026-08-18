@@ -49,6 +49,9 @@ async function main() {
   await startChat({
     code: session.code,
     role: 'host',
+    // Até o celular parear, a tela fica só com o QR e o código: o chat entra
+    // em cena quando houver com quem conversar.
+    revealOnPair: true,
     onPeerChange: present => pairing.classList.toggle('paired', present)
   });
 }

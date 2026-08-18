@@ -63,6 +63,14 @@ function forgetToken(code, role) {
   try { sessionStorage.removeItem(tokenKey(code, role)); } catch { /* navegação privada */ }
 }
 
+/** Traz o bloco de chat para a tela. Idempotente: repetir não rouba o foco. */
+function revealChat() {
+  if (!elements.chat.hidden) return;
+
+  elements.chat.hidden = false;
+  elements.text.focus();
+}
+
 function scrollToEnd() {
   elements.messages.scrollTop = elements.messages.scrollHeight;
 }
@@ -104,7 +112,7 @@ const roleLabel = role => (role === 'host' ? 'O computador' : 'O celular');
  * Conecta ao hub, entra na sessão e liga a interface de chat.
  * @param {{code: string, role: 'host'|'guest', onPeerChange?: (present: boolean) => void}} params
  */
-export async function startChat({ code, role, onPeerChange }) {
+export async function startChat({ code, role, onPeerChange, revealOnPair = false }) {
   // As bibliotecas vêm de CDN: sem internet ou com o CDN fora, o erro nativo
   // seria "signalR is not defined", que não diz nada a quem está usando.
   if (typeof signalR === 'undefined') {
@@ -113,6 +121,7 @@ export async function startChat({ code, role, onPeerChange }) {
 
   let token = recallToken(code, role);
   let joined = false;
+  let peerPresent = false;
 
   const connection = new signalR.HubConnectionBuilder()
     .withUrl(hubUrl())
@@ -126,6 +135,7 @@ export async function startChat({ code, role, onPeerChange }) {
     rememberToken(code, role, token);
 
     result.messages.forEach(message => appendMessage(message, role));
+    peerPresent = result.peerConnected;
     onPeerChange?.(result.peerConnected);
 
     joined = true;
@@ -140,11 +150,18 @@ export async function startChat({ code, role, onPeerChange }) {
 
   connection.on('PeerJoined', peerRole => {
     appendSystemLine(`${roleLabel(peerRole)} entrou na sessão.`);
+    peerPresent = true;
+    // Seguro chamar daqui: um evento do servidor só é entregue depois que o
+    // bloco síncrono da entrada terminou, ou seja, com os listeners já ligados.
+    revealChat();
     onPeerChange?.(true);
   });
 
   connection.on('PeerLeft', peerRole => {
     appendSystemLine(`${roleLabel(peerRole)} saiu da sessão.`);
+    peerPresent = false;
+    // O chat permanece à vista: esconder a conversa a cada oscilação de rede
+    // seria pior que a tela ficar mais alta.
     onPeerChange?.(false);
   });
 
@@ -188,8 +205,6 @@ export async function startChat({ code, role, onPeerChange }) {
     throw error;
   }
 
-  elements.chat.hidden = false;
-
   // Registrados só depois da entrada bem-sucedida: uma tentativa recusada pode
   // ser repetida, e listeners acumulados disparariam a ação mais de uma vez.
   elements.reconnect.addEventListener('click', async () => {
@@ -225,7 +240,12 @@ export async function startChat({ code, role, onPeerChange }) {
     }
   });
 
-  elements.text.focus();
+  // Com revealOnPair, a tela do anfitrião fica só com o QR e o código até o
+  // celular entrar — a não ser que ele já estivesse lá quando entramos.
+  if (!revealOnPair || peerPresent) {
+    revealChat();
+  }
+
   return connection;
 }
 
