@@ -196,14 +196,47 @@ body {
   word-break: break-word;
 }
 
+.message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
 .message time {
-  display: block;
-  margin-top: 0.125rem;
   font-size: 0.6875rem;
   opacity: 0.7;
 }
 
-.message.system time { display: none; }
+/* currentColor faz o botão funcionar nos dois fundos: o azul das próprias
+   mensagens e o cinza das do outro lado. */
+.copy {
+  min-width: 4.25rem;
+  padding: 0.25rem 0.5rem;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.copy:hover,
+.copy:focus-visible,
+.copy.copied {
+  opacity: 1;
+}
+
+.copy:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.copy.copied { font-weight: 600; }
 
 .composer {
   display: flex;

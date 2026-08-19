@@ -83,6 +83,65 @@ function revealChat() {
   elements.text.focus();
 }
 
+/**
+ * Copia texto para a área de transferência.
+ *
+ * `navigator.clipboard` só existe em contexto seguro — HTTPS ou localhost. Na
+ * rede local o endereço é `http://<ip>`, que não qualifica, e é justamente o
+ * uso principal desta aplicação. Daí o caminho antigo com `execCommand`, que
+ * continua funcionando em todos os navegadores e não exige contexto seguro.
+ */
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const scratch = document.createElement('textarea');
+  scratch.value = text;
+  scratch.setAttribute('aria-hidden', 'true');
+  scratch.style.position = 'fixed';
+  scratch.style.top = '0';
+  scratch.style.opacity = '0';
+  document.body.append(scratch);
+
+  try {
+    scratch.focus();
+    scratch.setSelectionRange(0, scratch.value.length);
+
+    if (!document.execCommand('copy')) {
+      throw new Error('cópia recusada pelo navegador');
+    }
+  } finally {
+    scratch.remove();
+  }
+}
+
+function createCopyButton(text) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'copy';
+  button.textContent = 'Copiar';
+  button.setAttribute('aria-label', 'Copiar mensagem');
+
+  button.addEventListener('click', async () => {
+    try {
+      await copyText(text);
+      button.textContent = 'Copiado';
+      button.classList.add('copied');
+    } catch {
+      button.textContent = 'Falhou';
+    }
+
+    setTimeout(() => {
+      button.textContent = 'Copiar';
+      button.classList.remove('copied');
+    }, 1500);
+  });
+
+  return button;
+}
+
 function scrollToEnd() {
   elements.messages.scrollTop = elements.messages.scrollHeight;
 }
@@ -113,7 +172,13 @@ function appendMessage(message, myRole) {
   time.textContent = new Date(message.sentAt)
     .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  item.append(body, time);
+  const meta = document.createElement('div');
+  meta.className = 'message-meta';
+  // Copia do dado recebido, não do que está na tela: o texto vai íntegro,
+  // sem depender de como foi renderizado.
+  meta.append(time, createCopyButton(message.text));
+
+  item.append(body, meta);
   elements.messages.append(item);
   scrollToEnd();
 }
