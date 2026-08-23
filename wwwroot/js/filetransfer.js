@@ -93,6 +93,40 @@ export async function sendFile(channel, file, { maxMessageSize, onProgress } = {
 }
 
 /**
+ * Decide por onde o arquivo sai, e o que fazer quando o caminho escolhido falha.
+ *
+ * A política vive separada de quem desenha a tela porque é ela que define o
+ * comportamento observável: cair para o servidor não é erro, é o esperado —
+ * mas só quando o arquivo cabe lá.
+ *
+ * @param {{
+ *   size: number,
+ *   relayLimit: number,
+ *   sendDirect: (() => Promise<void>) | null,
+ *   sendViaServer: () => Promise<void>,
+ *   onReroute?: () => void
+ * }} params
+ * @returns {Promise<'direct'|'relay'>} por onde o arquivo acabou saindo.
+ */
+export async function deliverWithFallback({ size, relayLimit, sendDirect, sendViaServer, onReroute }) {
+  if (sendDirect) {
+    try {
+      await sendDirect();
+      return 'direct';
+    } catch (error) {
+      // Acima do teto do servidor não há para onde cair: insistir daria no
+      // mesmo erro alguns megabytes adiante, então é melhor dizer logo.
+      if (size > relayLimit) throw error;
+
+      onReroute?.();
+    }
+  }
+
+  await sendViaServer();
+  return 'relay';
+}
+
+/**
  * Monta o lado receptor.
  *
  * @param {{

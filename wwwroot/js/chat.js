@@ -3,7 +3,7 @@
 // página, para que a aplicação funcione servida em subcaminho.
 
 import { createTransport, Transport } from './transport.js';
-import { sendFile, createFileReceiver } from './filetransfer.js';
+import { sendFile, createFileReceiver, deliverWithFallback } from './filetransfer.js';
 import { uploadToServer, downloadFromServer } from './relay.js';
 
 const elements = {
@@ -221,14 +221,32 @@ function appendFileMessage({ name, size, mine }) {
   elements.messages.append(item);
   scrollToEnd();
 
+  /** Sufixo que diz por onde a transferência está indo, quando não é o padrão. */
+  let route = '';
+
   return {
+    /**
+     * Muda a rota anunciada. Trocar de caminho no meio não é erro, então
+     * aparece no próprio rótulo de progresso em vez de virar aviso vermelho.
+     */
+    reroute(label) {
+      route = label ? ` · ${label}` : '';
+    },
+
     progress(done) {
       const pct = size > 0 ? Math.round((done / size) * 100) : 100;
-      status.textContent = `${formatSize(size)} · ${pct}%`;
+      status.textContent = `${formatSize(size)} · ${pct}%${route}`;
     },
 
     sent() {
-      status.textContent = `${formatSize(size)} · enviado`;
+      status.textContent = `${formatSize(size)} · enviado${route}`;
+    },
+
+    /** Devolve a bolha ao estado inicial, para uma nova tentativa. */
+    reset() {
+      route = '';
+      status.classList.remove('failed');
+      status.textContent = formatSize(size);
     },
 
     ready(blob) {
@@ -536,6 +554,59 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
     }
   });
 
+  /** Liga a política de entrega às duas rotas concretas e à bolha na tela. */
+  function deliver(file, bubble) {
+    const channel = transport.channel;
+
+    return deliverWithFallback({
+      size: file.size,
+      relayLimit: limits.relay,
+
+      sendDirect: channel
+        ? () => sendFile(channel, file, {
+            maxMessageSize: transport.maxMessageSize,
+            onProgress: sent => bubble.progress(sent)
+          })
+        : null,
+
+      sendViaServer: () => uploadToServer({
+        code,
+        token,
+        file,
+        onProgress: sent => bubble.progress(sent)
+      }),
+
+      onReroute: () => {
+        bubble.reroute('pelo servidor');
+        bubble.progress(0);
+      }
+    });
+  }
+
+  /** Envia e, se falhar de vez, deixa a bolha com um botão de repetir. */
+  async function attemptSend(file, bubble) {
+    // Um arquivo por vez: o receptor remonta uma transferência de cada vez, e
+    // duas em paralelo embaralhariam os pedaços no mesmo canal.
+    elements.attach.disabled = true;
+
+    try {
+      await deliver(file, bubble);
+      bubble.sent();
+      clearError();
+    } catch (error) {
+      bubble.fail('falhou');
+      showError(error.message);
+
+      bubble.action('Tentar de novo', async button => {
+        button.remove();
+        bubble.reset();
+        await attemptSend(file, bubble);
+      });
+    } finally {
+      elements.attach.disabled = false;
+    }
+  }
+
   // O input de arquivo fica escondido porque o controle nativo não aceita texto
   // próprio, e é o rótulo que carrega o limite.
   elements.attach.addEventListener('click', () => elements.file.click());
@@ -563,36 +634,11 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
 
     clearError();
 
-    const channel = transport.channel;
-
-    // Um arquivo por vez: o receptor remonta uma transferência de cada vez, e
-    // duas em paralelo embaralhariam os pedaços no mesmo canal.
-    elements.attach.disabled = true;
-
-    const bubble = appendFileMessage({ name: file.name, size: file.size, mine: true });
-
-    try {
-      if (channel) {
-        await sendFile(channel, file, {
-          maxMessageSize: transport.maxMessageSize,
-          onProgress: sent => bubble.progress(sent)
-        });
-      } else {
-        await uploadToServer({
-          code,
-          token,
-          file,
-          onProgress: sent => bubble.progress(sent)
-        });
-      }
-
-      bubble.sent();
-    } catch (error) {
-      bubble.fail('falhou');
-      showError(error.message);
-    } finally {
-      elements.attach.disabled = false;
-    }
+    await attemptSend(file, appendFileMessage({
+      name: file.name,
+      size: file.size,
+      mine: true
+    }));
   });
 
   // Com revealOnPair, a tela do anfitrião fica só com o QR e o código até o
