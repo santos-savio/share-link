@@ -2,7 +2,7 @@
 // Nenhuma URL aqui começa com "/": tudo é resolvido a partir do endereço da
 // página, para que a aplicação funcione servida em subcaminho.
 
-import { createTransport } from './transport.js';
+import { createTransport, Transport } from './transport.js';
 
 const elements = {
   status: document.getElementById('status'),
@@ -12,11 +12,19 @@ const elements = {
   messages: document.getElementById('messages'),
   composer: document.getElementById('composer'),
   text: document.getElementById('text'),
+  file: document.getElementById('file'),
+  attach: document.getElementById('attach'),
   error: document.getElementById('error')
 };
 
 /** Ids já desenhados na tela: o histórico volta inteiro a cada rejunção. */
 const renderedMessageIds = new Set();
+
+/** Tetos de arquivo, ditados pelo servidor na entrada — nunca fixos aqui. */
+const limits = { direct: 0, relay: 0 };
+
+/** Transporte vigente, que diz qual dos dois tetos vale neste momento. */
+let transportState = Transport.Relay;
 
 /** Endereço do hub relativo a esta página. */
 export function hubUrl() {
@@ -187,6 +195,40 @@ function appendMessage(message, myRole) {
 
 const roleLabel = role => (role === 'host' ? 'O computador' : 'O celular');
 
+/** Tamanho legível. O arredondamento é para leitura; quem valida usa os bytes. */
+function formatSize(bytes) {
+  const mb = bytes / (1024 * 1024);
+
+  if (mb >= 1024) {
+    const gb = mb / 1024;
+    return `${gb >= 10 ? Math.round(gb) : gb.toFixed(1)} GB`;
+  }
+
+  return `${Math.round(mb)} MB`;
+}
+
+/**
+ * Teto que vale agora. Enquanto a avaliação do canal direto não termina, vale o
+ * menor dos dois: prometer o maior e não cumprir seria pior que prometer pouco.
+ */
+function currentLimit() {
+  return transportState === Transport.Direct ? limits.direct : limits.relay;
+}
+
+/**
+ * Escreve o limite vigente no próprio botão. É o que evita a pior experiência
+ * possível aqui: escolher um arquivo e só então descobrir que ele não passa.
+ */
+function refreshAttachLabel() {
+  if (transportState === Transport.Probing) {
+    elements.attach.textContent = 'Verificando conexão direta…';
+    return;
+  }
+
+  const rota = transportState === Transport.Direct ? 'direto' : 'pelo servidor';
+  elements.attach.textContent = `Anexar — até ${formatSize(currentLimit())}, ${rota}`;
+}
+
 /**
  * Conecta ao hub, entra na sessão e liga a interface de chat.
  * @param {{
@@ -215,13 +257,28 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
 
   // Criado antes de a conexão subir, para que o ouvinte de sinalização já esteja
   // no lugar quando o outro lado propuser o canal.
-  const transport = createTransport({ connection, code, role, onStateChange: onTransportChange });
+  const transport = createTransport({
+    connection,
+    code,
+    role,
+    onStateChange: state => {
+      transportState = state;
+      refreshAttachLabel();
+      onTransportChange?.(state);
+    }
+  });
 
   async function joinAndRender() {
     const result = await connection.invoke('JoinSession', code, role, token);
 
     token = result.token;
     rememberToken(code, role, token);
+
+    // Os tetos vêm do servidor, não de constante no cliente: assim o número
+    // exibido antes da escolha é sempre o mesmo que será aplicado depois.
+    limits.direct = result.maxDirectFileBytes;
+    limits.relay = result.maxRelayFileBytes;
+    refreshAttachLabel();
 
     result.messages.forEach(message => appendMessage(message, role));
     peerPresent = result.peerConnected;
@@ -334,6 +391,37 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
       elements.text.value = text;
       showError(hubErrorMessage(error));
     }
+  });
+
+  // O input de arquivo fica escondido porque o controle nativo não aceita texto
+  // próprio, e é o rótulo que carrega o limite.
+  elements.attach.addEventListener('click', () => elements.file.click());
+
+  elements.file.addEventListener('change', () => {
+    const file = elements.file.files?.[0];
+
+    // Zerado já aqui para que escolher o mesmo arquivo de novo, depois de um
+    // erro, volte a disparar 'change' — sem isso a segunda tentativa é muda.
+    elements.file.value = '';
+
+    if (!file) return;
+
+    const limit = currentLimit();
+
+    if (file.size > limit) {
+      // A recusa nomeia o caminho de saída em vez de só constatar o excesso: na
+      // maioria das vezes basta os dois aparelhos voltarem à mesma rede.
+      showError(transportState === Transport.Direct
+        ? `Este arquivo tem ${formatSize(file.size)}. O limite do envio direto é ${formatSize(limit)}.`
+        : `Este arquivo tem ${formatSize(file.size)}. Pelo servidor o limite é ${formatSize(limit)}. `
+          + 'Conecte os dois aparelhos na mesma rede para enviar arquivos grandes.');
+      return;
+    }
+
+    clearError();
+
+    // A transferência entra na etapa seguinte. O que esta já garante é que o
+    // limite foi decidido e informado antes da escolha, não depois dela.
   });
 
   // Com revealOnPair, a tela do anfitrião fica só com o QR e o código até o

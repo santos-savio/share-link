@@ -36,9 +36,17 @@ public interface ISessionClient
 /// Credencial do participante. O cliente guarda e reapresenta ao reconectar,
 /// para retomar o próprio slot em vez de ser recusado como um terceiro.
 /// </param>
+/// <param name="MaxDirectFileBytes">
+/// Teto de arquivo pelo canal direto. Viaja daqui, e não de constante no
+/// JavaScript, para que o número exibido antes da escolha seja sempre o mesmo
+/// que o servidor aplica — front e back não têm como divergir.
+/// </param>
+/// <param name="MaxRelayFileBytes">Teto de arquivo pelo servidor.</param>
 public sealed record JoinSessionResult(
     string Code,
     string Role,
     string Token,
     bool PeerConnected,
-    IReadOnlyList<ChatMessage> Messages);
+    IReadOnlyList<ChatMessage> Messages,
+    long MaxDirectFileBytes,
+    long MaxRelayFileBytes);

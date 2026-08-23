@@ -56,7 +56,9 @@ public sealed class SessionHub(
             RoleName(participantRole),
             issuedToken!,
             peerConnected,
-            session.SnapshotMessages());
+            session.SnapshotMessages(),
+            _options.MaxDirectFileBytes,
+            _options.MaxRelayFileBytes);
     }
 
     /// <summary>Publica uma mensagem para os dois lados da sessão.</summary>

@@ -23,6 +23,20 @@ public sealed class ShareLinkOptions
     /// </summary>
     public int MaxSignalPayloadLength { get; set; } = 16384;
 
+    /// <summary>
+    /// Teto de um arquivo enviado pelo canal direto, em bytes. Os bytes não passam pelo
+    /// servidor, então o limite aqui não é de rede nem de disco: é a memória do navegador
+    /// que recebe, porque o arquivo é remontado inteiro antes de virar download.
+    /// </summary>
+    public long MaxDirectFileBytes { get; set; } = 524288000;
+
+    /// <summary>
+    /// Teto de um arquivo enviado pelo servidor, em bytes. Bem menor que o do canal
+    /// direto porque aqui o custo é de quem hospeda: cada envio ocupa banda de subida e
+    /// de descida, mais um arquivo temporário até o outro lado buscar.
+    /// </summary>
+    public long MaxRelayFileBytes { get; set; } = 36700160;
+
     /// <summary>Convidados simultâneos por sessão. O MVP usa 1; o modelo suporta mais sem alteração de código.</summary>
     public int MaxGuestsPerSession { get; set; } = 1;
 
