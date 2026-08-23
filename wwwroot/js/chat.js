@@ -2,6 +2,8 @@
 // Nenhuma URL aqui começa com "/": tudo é resolvido a partir do endereço da
 // página, para que a aplicação funcione servida em subcaminho.
 
+import { createTransport } from './transport.js';
+
 const elements = {
   status: document.getElementById('status'),
   reconnect: document.getElementById('reconnect'),
@@ -187,9 +189,15 @@ const roleLabel = role => (role === 'host' ? 'O computador' : 'O celular');
 
 /**
  * Conecta ao hub, entra na sessão e liga a interface de chat.
- * @param {{code: string, role: 'host'|'guest', onPeerChange?: (present: boolean) => void}} params
+ * @param {{
+ *   code: string,
+ *   role: 'host'|'guest',
+ *   onPeerChange?: (present: boolean) => void,
+ *   onTransportChange?: (state: string) => void,
+ *   revealOnPair?: boolean
+ * }} params
  */
-export async function startChat({ code, role, onPeerChange, revealOnPair = false }) {
+export async function startChat({ code, role, onPeerChange, onTransportChange, revealOnPair = false }) {
   // As bibliotecas vêm de CDN: sem internet ou com o CDN fora, o erro nativo
   // seria "signalR is not defined", que não diz nada a quem está usando.
   if (typeof signalR === 'undefined') {
@@ -205,6 +213,10 @@ export async function startChat({ code, role, onPeerChange, revealOnPair = false
     .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
     .build();
 
+  // Criado antes de a conexão subir, para que o ouvinte de sinalização já esteja
+  // no lugar quando o outro lado propuser o canal.
+  const transport = createTransport({ connection, code, role, onStateChange: onTransportChange });
+
   async function joinAndRender() {
     const result = await connection.invoke('JoinSession', code, role, token);
 
@@ -214,6 +226,10 @@ export async function startChat({ code, role, onPeerChange, revealOnPair = false
     result.messages.forEach(message => appendMessage(message, role));
     peerPresent = result.peerConnected;
     onPeerChange?.(result.peerConnected);
+
+    // Vale tanto para a entrada quanto para a volta de uma queda: reconectar
+    // traz conexão nova, e o par negociado antes morreu junto com a antiga.
+    if (result.peerConnected) transport.probe();
 
     joined = true;
     elements.reconnect.hidden = true;
@@ -232,6 +248,7 @@ export async function startChat({ code, role, onPeerChange, revealOnPair = false
     // bloco síncrono da entrada terminou, ou seja, com os listeners já ligados.
     revealChat();
     onPeerChange?.(true);
+    transport.probe();
   });
 
   connection.on('PeerLeft', peerRole => {
@@ -240,6 +257,7 @@ export async function startChat({ code, role, onPeerChange, revealOnPair = false
     // O chat permanece à vista: esconder a conversa a cada oscilação de rede
     // seria pior que a tela ficar mais alta.
     onPeerChange?.(false);
+    transport.reset();
   });
 
   connection.on('SessionEnded', reason => {
@@ -249,6 +267,7 @@ export async function startChat({ code, role, onPeerChange, revealOnPair = false
     elements.reconnect.hidden = true;
     elements.restart.hidden = false;
     forgetToken(code, role);
+    transport.reset();
     joined = false;
   });
 
@@ -323,7 +342,7 @@ export async function startChat({ code, role, onPeerChange, revealOnPair = false
     revealChat();
   }
 
-  return connection;
+  return { connection, transport };
 }
 
 /** Há token guardado para este papel nesta sessão? Indica retomada, não entrada nova. */
