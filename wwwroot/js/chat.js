@@ -3,7 +3,13 @@
 // página, para que a aplicação funcione servida em subcaminho.
 
 import { createTransport, Transport } from './transport.js';
-import { sendFile, createFileReceiver, deliverWithFallback } from './filetransfer.js';
+import {
+  sendFile,
+  createFileReceiver,
+  deliverWithFallback,
+  createTransferControl,
+  TransferCancelledError
+} from './filetransfer.js';
 import { uploadToServer, downloadFromServer } from './relay.js';
 
 const elements = {
@@ -224,6 +230,9 @@ function appendFileMessage({ name, size, mine }) {
   /** Sufixo que diz por onde a transferência está indo, quando não é o padrão. */
   let route = '';
 
+  /** Linha de botões (cancelar/pausar) da tentativa em curso, se houver. */
+  let controlsRow = null;
+
   return {
     /**
      * Muda a rota anunciada. Trocar de caminho no meio não é erro, então
@@ -240,6 +249,18 @@ function appendFileMessage({ name, size, mine }) {
 
     sent() {
       status.textContent = `${formatSize(size)} · enviado${route}`;
+    },
+
+    /** Sem par do outro lado agora: o envio está retido, não parado por erro. */
+    waiting(text) {
+      status.classList.remove('failed');
+      status.textContent = text;
+    },
+
+    /** Interrompido pelo próprio usuário — distinto de falha, sem alarme vermelho. */
+    cancelled() {
+      status.classList.remove('failed');
+      status.textContent = `${formatSize(size)} · cancelado${route}`;
     },
 
     /** Devolve a bolha ao estado inicial, para uma nova tentativa. */
@@ -287,6 +308,54 @@ function appendFileMessage({ name, size, mine }) {
       scrollToEnd();
 
       return button;
+    },
+
+    /**
+     * Botões de cancelar e, quando informado, pausar/retomar. Vivem enquanto
+     * a tentativa dura — quem chama remove a linha ao final, com sucesso,
+     * falha ou cancelamento.
+     */
+    controls({ onCancel, onPause, onResume }) {
+      controlsRow = document.createElement('div');
+      controlsRow.className = 'message-meta';
+
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'file-download';
+      cancelButton.textContent = 'Cancelar';
+      cancelButton.addEventListener('click', () => onCancel());
+      controlsRow.append(cancelButton);
+
+      if (onPause) {
+        const pauseButton = document.createElement('button');
+        pauseButton.type = 'button';
+        pauseButton.className = 'file-download';
+        pauseButton.textContent = 'Pausar';
+
+        let paused = false;
+
+        pauseButton.addEventListener('click', () => {
+          paused = !paused;
+          pauseButton.textContent = paused ? 'Retomar' : 'Pausar';
+          (paused ? onPause : onResume)();
+        });
+
+        controlsRow.append(pauseButton);
+        controlsRow.hidePause = () => pauseButton.remove();
+      }
+
+      item.append(controlsRow);
+      scrollToEnd();
+    },
+
+    /** Some com o botão de pausa quando o envio deixa de ser pelo canal direto. */
+    hidePause() {
+      controlsRow?.hidePause?.();
+    },
+
+    clearControls() {
+      controlsRow?.remove();
+      controlsRow = null;
     },
 
     fail(text) {
@@ -359,6 +428,32 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
   let joined = false;
   let peerPresent = false;
 
+  /** Quem está parado esperando o par aparecer, para liberar um envio pelo servidor. */
+  let peerWaiters = [];
+
+  function wakePeerWaiters() {
+    peerWaiters.splice(0).forEach(resolve => resolve());
+  }
+
+  /**
+   * Trava a entrega pelo servidor enquanto não houver ninguém para receber o
+   * anúncio — mandar mesmo assim deixaria o arquivo órfão até a sessão
+   * expirar. Um cancelamento também acorda a espera, sem contar como volta do
+   * par: quem chama confere `control.cancelled` depois.
+   */
+  async function waitForPeer(control, onWait) {
+    if (peerPresent) return;
+
+    onWait?.();
+
+    while (!peerPresent && !control?.cancelled) {
+      await new Promise(resolve => {
+        peerWaiters.push(resolve);
+        control?.signal.addEventListener('abort', resolve, { once: true });
+      });
+    }
+  }
+
   const connection = new signalR.HubConnectionBuilder()
     .withUrl(hubUrl())
     .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
@@ -420,6 +515,7 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
 
     result.messages.forEach(message => appendMessage(message, role));
     peerPresent = result.peerConnected;
+    if (peerPresent) wakePeerWaiters();
     onPeerChange?.(result.peerConnected);
 
     // Vale tanto para a entrada quanto para a volta de uma queda: reconectar
@@ -468,6 +564,7 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
   connection.on('PeerJoined', peerRole => {
     appendSystemLine(`${roleLabel(peerRole)} entrou na sessão.`);
     peerPresent = true;
+    wakePeerWaiters();
     // Seguro chamar daqui: um evento do servidor só é entregue depois que o
     // bloco síncrono da entrada terminou, ou seja, com os listeners já ligados.
     revealChat();
@@ -561,7 +658,7 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
   });
 
   /** Liga a política de entrega às duas rotas concretas e à bolha na tela. */
-  function deliver(file, bubble) {
+  function deliver(file, bubble, control) {
     const channel = transport.channel;
 
     return deliverWithFallback({
@@ -571,20 +668,32 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
       sendDirect: channel
         ? () => sendFile(channel, file, {
             maxMessageSize: transport.maxMessageSize,
-            onProgress: sent => bubble.progress(sent)
+            onProgress: sent => bubble.progress(sent),
+            control
           })
         : null,
 
-      sendViaServer: () => uploadToServer({
-        code,
-        token,
-        file,
-        onProgress: sent => bubble.progress(sent)
-      }),
+      sendViaServer: async () => {
+        // Sem par para receber o anúncio, subir o arquivo o deixaria órfão no
+        // servidor até a sessão expirar: melhor esperar do que perder.
+        await waitForPeer(control, () => bubble.waiting('Aguardando o celular reconectar…'));
+        if (control.cancelled) throw new TransferCancelledError();
+
+        bubble.progress(0);
+
+        return uploadToServer({
+          code,
+          token,
+          file,
+          onProgress: sent => bubble.progress(sent),
+          control
+        });
+      },
 
       onReroute: () => {
         bubble.reroute('pelo servidor');
         bubble.progress(0);
+        bubble.hidePause();
       }
     });
   }
@@ -595,20 +704,39 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
     // duas em paralelo embaralhariam os pedaços no mesmo canal.
     elements.attach.disabled = true;
 
+    const control = createTransferControl();
+
+    // Pausar só faz sentido se a tentativa já começa pelo canal direto — pelo
+    // servidor não há como suspender um upload em curso.
+    const canPause = transport.channel !== null;
+
+    bubble.controls({
+      onCancel: () => control.cancel(),
+      onPause: canPause ? () => control.pause() : undefined,
+      onResume: canPause ? () => control.resume() : undefined
+    });
+
     try {
-      await deliver(file, bubble);
+      await deliver(file, bubble, control);
       bubble.sent();
       clearError();
     } catch (error) {
-      bubble.fail('falhou');
-      showError(error.message);
+      const cancelled = error instanceof TransferCancelledError;
 
-      bubble.action('Tentar de novo', async button => {
+      if (cancelled) {
+        bubble.cancelled();
+      } else {
+        bubble.fail('falhou');
+        showError(error.message);
+      }
+
+      bubble.action(cancelled ? 'Enviar de novo' : 'Tentar de novo', async button => {
         button.remove();
         bubble.reset();
         await attemptSend(file, bubble);
       });
     } finally {
+      bubble.clearControls();
       elements.attach.disabled = false;
     }
   }

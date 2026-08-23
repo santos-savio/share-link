@@ -6,16 +6,69 @@
 // bytes crus no meio — o receptor distingue um do outro pelo tipo do dado.
 
 /** Acima disto o buffer de saída é considerado cheio e o envio pausa. */
-const HIGH_WATER_BYTES = 1048576;
+const HIGH_WATER_BYTES = 4194304;
 
 /** Retomada quando o buffer desce até aqui. */
-const LOW_WATER_BYTES = 262144;
+const LOW_WATER_BYTES = 1048576;
 
 /**
- * Pedaço de 64 KB, ou o teto que a conexão aceitar, o que for menor. Passar do
- * teto derruba o canal em vez de fatiar sozinho.
+ * Pedaço de 256 KB, ou o teto que a conexão aceitar, o que for menor. Passar
+ * do teto derruba o canal em vez de fatiar sozinho.
  */
-const PREFERRED_CHUNK_BYTES = 65536;
+const PREFERRED_CHUNK_BYTES = 262144;
+
+/**
+ * Marca um envio interrompido pelo usuário, para diferenciar de falha real:
+ * quem decide o que fazer a seguir (não cair pro servidor, não soar alarme)
+ * precisa saber que o fim veio de um clique, não da rede.
+ */
+export class TransferCancelledError extends Error {
+  constructor() {
+    super('Envio cancelado.');
+    this.name = 'TransferCancelledError';
+  }
+}
+
+/**
+ * Controle compartilhado entre quem desenha a bolha e quem está de fato
+ * mandando bytes. `signal` cobre cancelamento nos dois transportes (inclusive
+ * dá pra plugar num XMLHttpRequest); pausa só é consultada pelo canal direto,
+ * onde o laço de envio é conduzido pelo próprio cliente.
+ */
+export function createTransferControl() {
+  const abortController = new AbortController();
+  let paused = false;
+  let resumeWaiters = [];
+
+  function wake() {
+    resumeWaiters.splice(0).forEach(resolve => resolve());
+  }
+
+  return {
+    signal: abortController.signal,
+    get cancelled() { return abortController.signal.aborted; },
+    get paused() { return paused; },
+
+    cancel() {
+      abortController.abort();
+      wake();
+    },
+
+    pause() { paused = true; },
+
+    resume() {
+      paused = false;
+      wake();
+    },
+
+    /** Não retorna enquanto pausado — a não ser que um cancelamento acorde. */
+    async waitWhilePaused() {
+      while (paused && !abortController.signal.aborted) {
+        await new Promise(resolve => resumeWaiters.push(resolve));
+      }
+    }
+  };
+}
 
 /**
  * Espera o buffer de saída baixar. Sem isto, um arquivo grande é empilhado
@@ -40,12 +93,14 @@ function drain(channel) {
  *
  * @param {RTCDataChannel} channel
  * @param {File} file
- * @param {{maxMessageSize?: number, onProgress?: (sent: number) => void}} options
+ * @param {{maxMessageSize?: number, onProgress?: (sent: number) => void, control?: ReturnType<typeof createTransferControl>}} options
  */
-export async function sendFile(channel, file, { maxMessageSize, onProgress } = {}) {
+export async function sendFile(channel, file, { maxMessageSize, onProgress, control } = {}) {
   if (channel.readyState !== 'open') {
     throw new Error('A conexão direta caiu antes de o envio começar.');
   }
+
+  if (control?.cancelled) throw new TransferCancelledError();
 
   const id = crypto.randomUUID();
   const chunkBytes = Math.min(PREFERRED_CHUNK_BYTES, maxMessageSize || PREFERRED_CHUNK_BYTES);
@@ -64,6 +119,9 @@ export async function sendFile(channel, file, { maxMessageSize, onProgress } = {
 
   try {
     while (sent < file.size) {
+      await control?.waitWhilePaused();
+      if (control?.cancelled) throw new TransferCancelledError();
+
       await drain(channel);
 
       // Reconferido a cada volta: o canal pode cair no meio de um arquivo
@@ -114,6 +172,10 @@ export async function deliverWithFallback({ size, relayLimit, sendDirect, sendVi
       await sendDirect();
       return 'direct';
     } catch (error) {
+      // Cancelamento é decisão do usuário, não falha de rede: nunca é o
+      // servidor que deveria assumir a partir daí.
+      if (error instanceof TransferCancelledError) throw error;
+
       // Acima do teto do servidor não há para onde cair: insistir daria no
       // mesmo erro alguns megabytes adiante, então é melhor dizer logo.
       if (size > relayLimit) throw error;

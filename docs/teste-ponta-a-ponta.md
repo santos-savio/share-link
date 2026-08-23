@@ -185,6 +185,14 @@ Repita os itens 1, 2 e 6 com a aplicação publicada em `https://dominio.com/qrc
       ganha um botão **Tentar de novo** que funciona.
 - [ ] Do lado que recebia, a bolha não fica com o progresso congelado: ela é
       encerrada com o motivo da queda.
+- [ ] Tire o celular da sessão (feche a aba) e, com ele fora, escolha um
+      arquivo no computador. A bolha nasce com "Aguardando o celular
+      reconectar…", sem subir nada. Ao o celular entrar de novo, o envio
+      começa sozinho, sem precisar escolher o arquivo outra vez.
+- [ ] Comece um envio pela conexão direta com um arquivo acima de 35 MB e
+      derrube o Wi-Fi do celular de vez (sem religar). A bolha muda para
+      "Aguardando o celular reconectar…" em vez de tentar (e falhar) pelo
+      servidor. Religue o Wi-Fi: o envio retoma pelo servidor sozinho.
 
 ### 12.6 Arquivo hostil
 
@@ -205,3 +213,25 @@ Repita os itens 1, 2 e 6 com a aplicação publicada em `https://dominio.com/qrc
       apaga o arquivo no dispose, não pelo sistema operacional, então uma morte
       abrupta deixa o temporário em `/tmp`. Se isso incomodar, uma varredura por
       idade resolve — hoje o processo não faz.
+
+### 12.8 Cancelar e pausar
+
+- [ ] Envie um arquivo grande pela conexão direta e clique em **Cancelar**
+      no meio. A bolha mostra "cancelado" (sem virar erro em vermelho, sem a
+      caixa de erro no topo), e o botão vira **Enviar de novo**.
+- [ ] Do lado que recebia, a bolha some ou é encerrada — sem baixar um
+      arquivo incompleto.
+- [ ] Repita cancelando um envio pelo servidor (celular em dados móveis) no
+      meio da subida.
+- [ ] Escolha um arquivo com o celular desconectado (bolha em "Aguardando o
+      celular reconectar…") e clique em **Cancelar** antes de ele voltar. A
+      bolha encerra como cancelada, sem nada subir quando o celular
+      reconectar depois.
+- [ ] Pela conexão direta, clique em **Pausar** no meio de um envio grande: o
+      progresso para de avançar. Clique em **Retomar**: continua do mesmo
+      ponto, não do zero.
+- [ ] Pelo servidor, a bolha não mostra botão de pausar — só Cancelar.
+- [ ] Comece pela conexão direta, pause, e derrube o Wi-Fi do celular
+      enquanto pausado. Ao religar, o comportamento não trava a aba (o pior
+      caso aceitável aqui é a bolha eventualmente cair para "Aguardando o
+      celular reconectar…" ou falhar com um "Tentar de novo" funcional).

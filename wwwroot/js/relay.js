@@ -4,6 +4,8 @@
 // Nenhuma URL aqui começa com "/": são relativas ao endereço da página, como no
 // resto do front-end, para a aplicação continuar funcionando em subcaminho.
 
+import { TransferCancelledError } from './filetransfer.js';
+
 /** O token do participante autoriza os dois endpoints. */
 const TOKEN_HEADER = 'X-ShareLink-Token';
 
@@ -27,9 +29,11 @@ function errorMessage(status) {
 /**
  * Sobe o arquivo e devolve o anúncio que o servidor gerou.
  *
- * @param {{code: string, token: string, file: File, onProgress?: (sent: number) => void}} params
+ * @param {{code: string, token: string, file: File, onProgress?: (sent: number) => void, control?: import('./filetransfer.js').TransferControl}} params
  */
-export function uploadToServer({ code, token, file, onProgress }) {
+export function uploadToServer({ code, token, file, onProgress, control }) {
+  if (control?.cancelled) return Promise.reject(new TransferCancelledError());
+
   return new Promise((resolve, reject) => {
     // XMLHttpRequest, e não fetch: só ele reporta progresso de subida, que num
     // arquivo de dezenas de megabytes é a diferença entre esperar e não saber.
@@ -57,6 +61,12 @@ export function uploadToServer({ code, token, file, onProgress }) {
 
     request.addEventListener('error', () => reject(new Error('A rede falhou durante o envio.')));
     request.addEventListener('timeout', () => reject(new Error('O envio demorou demais.')));
+    request.addEventListener('abort', () => reject(new TransferCancelledError()));
+
+    // Sem suporte a pausa aqui: XMLHttpRequest não permite suspender um envio
+    // em curso, só abortar. Cancelar é o único controle que faz sentido pelo
+    // servidor.
+    control?.signal.addEventListener('abort', () => request.abort());
 
     request.open('POST', filesUrl(code));
     request.setRequestHeader(TOKEN_HEADER, token);
