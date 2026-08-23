@@ -300,14 +300,20 @@ const roleLabel = role => (role === 'host' ? 'O computador' : 'O celular');
 
 /** Tamanho legível. O arredondamento é para leitura; quem valida usa os bytes. */
 function formatSize(bytes) {
-  const mb = bytes / (1024 * 1024);
+  const kb = bytes / 1024;
+
+  if (kb < 1) return `${bytes} B`;
+
+  const mb = kb / 1024;
+
+  if (mb < 1) return `${Math.round(kb)} KB`;
 
   if (mb >= 1024) {
     const gb = mb / 1024;
     return `${gb >= 10 ? Math.round(gb) : gb.toFixed(1)} GB`;
   }
 
-  return `${Math.round(mb)} MB`;
+  return `${mb >= 10 ? Math.round(mb) : mb.toFixed(1)} MB`;
 }
 
 /**
