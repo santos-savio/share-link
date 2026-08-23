@@ -11,7 +11,7 @@ namespace ShareLink.Services;
 /// mensagens, mas não podem ser consultados — não há API para perguntar se um
 /// grupo existe ou quem está nele. Quem responde isso é este store.
 /// </summary>
-public sealed class SessionStore(IOptions<ShareLinkOptions> options, ILogger<SessionStore> logger)
+public sealed class SessionStore(IOptions<ShareLinkOptions> options, ILogger<SessionStore> logger) : IDisposable
 {
     private const int MaxCodeGenerationAttempts = 10;
 
@@ -101,6 +101,22 @@ public sealed class SessionStore(IOptions<ShareLinkOptions> options, ILogger<Ses
         }
 
         return expired;
+    }
+
+    /// <summary>
+    /// Solta os arquivos de todas as sessões vivas. O contêiner de DI chama isto
+    /// no encerramento, e sem ele um restart deixaria temporários para trás:
+    /// <see cref="FileOptions.DeleteOnClose"/> só apaga quando o descritor fecha,
+    /// e no Linux quem fecha é o dispose — não o sistema operacional.
+    /// </summary>
+    public void Dispose()
+    {
+        foreach (var session in _sessions.Values)
+        {
+            session.DisposeFiles();
+        }
+
+        _sessions.Clear();
     }
 
     private static string Normalize(string? code) => code?.Trim().ToUpperInvariant() ?? string.Empty;
