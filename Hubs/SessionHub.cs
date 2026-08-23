@@ -89,6 +89,49 @@ public sealed class SessionHub(
         await Clients.Group(session.Code).ReceiveMessage(message);
     }
 
+    /// <summary>
+    /// Repassa ao outro participante um dado de negociação do canal direto entre os dois
+    /// aparelhos.
+    /// </summary>
+    /// <param name="payload">
+    /// Offer, answer ou candidato ICE. O servidor não interpreta nada disso — só entrega.
+    /// Manter o conteúdo opaco aqui é o que permite mudar o protocolo do canal direto sem
+    /// tocar no back-end.
+    /// </param>
+    public async Task SendSignal(string code, string payload)
+    {
+        if (!store.TryGet(code, out var session))
+        {
+            throw new HubException("Sessão não encontrada ou expirada.");
+        }
+
+        // Mesma regra do envio de mensagem: quem não está na sessão não fala com ela.
+        if (!session.TryGetRole(Context.ConnectionId, out _))
+        {
+            throw new HubException("Esta conexão não faz parte da sessão.");
+        }
+
+        if (string.IsNullOrEmpty(payload))
+        {
+            throw new HubException("Sinal vazio.");
+        }
+
+        if (payload.Length > _options.MaxSignalPayloadLength)
+        {
+            throw new HubException($"Sinal acima do limite de {_options.MaxSignalPayloadLength} caracteres.");
+        }
+
+        // Negociar o canal direto é atividade de participante, e renovar aqui cobre um
+        // caso que nenhuma outra chamada cobre: transferência pelo canal direto não gera
+        // tráfego nenhum no servidor, então uma sessão só de arquivos envelheceria como
+        // se estivesse ociosa.
+        session.Touch();
+
+        // OthersInGroup, e não Group: a negociação trata tudo que chega como vindo do
+        // outro lado, então devolver o próprio sinal ao remetente a confundiria.
+        await Clients.OthersInGroup(session.Code).ReceiveSignal(payload);
+    }
+
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var session = store.RemoveConnection(Context.ConnectionId, out var role);

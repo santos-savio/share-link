@@ -16,6 +16,13 @@ public sealed class ShareLinkOptions
     /// <summary>Limite de caracteres por mensagem.</summary>
     public int MaxMessageLength { get; set; } = 2000;
 
+    /// <summary>
+    /// Limite de caracteres por sinal de negociação do canal direto. Um SDP cabe com
+    /// folga em 16 KB, e o teto mantém distância do limite de 32 KB que o SignalR impõe
+    /// por mensagem recebida.
+    /// </summary>
+    public int MaxSignalPayloadLength { get; set; } = 16384;
+
     /// <summary>Convidados simultâneos por sessão. O MVP usa 1; o modelo suporta mais sem alteração de código.</summary>
     public int MaxGuestsPerSession { get; set; } = 1;
 

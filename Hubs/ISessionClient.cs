@@ -11,6 +11,12 @@ public interface ISessionClient
     /// <summary>Mensagem nova na sessão, do próprio remetente ou do outro lado.</summary>
     Task ReceiveMessage(ChatMessage message);
 
+    /// <summary>
+    /// Dado de negociação do canal direto vindo do outro participante. O conteúdo é
+    /// opaco para o servidor: quem o interpreta é o navegador do outro lado.
+    /// </summary>
+    Task ReceiveSignal(string payload);
+
     /// <summary>O outro participante entrou na sessão.</summary>
     Task PeerJoined(string role);
 
