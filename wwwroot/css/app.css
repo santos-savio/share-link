@@ -339,14 +339,22 @@ body {
    arquivo é nosso e cinza quando veio do outro lado. */
 .file-download {
   padding: 0.25rem 0.5rem;
+  /* Serve a <a> e a <button>: o botão só herda a fonte da página se mandarem. */
+  font: inherit;
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1.2;
   color: inherit;
   text-decoration: none;
+  background: transparent;
   border: 1px solid currentColor;
   border-radius: 0.25rem;
   opacity: 0.55;
+  cursor: pointer;
+}
+
+.file-download:disabled {
+  cursor: progress;
 }
 
 .file-download:hover,

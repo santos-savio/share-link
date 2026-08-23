@@ -37,6 +37,14 @@ public sealed class ShareLinkOptions
     /// </summary>
     public long MaxRelayFileBytes { get; set; } = 36700160;
 
+    /// <summary>
+    /// Arquivos que uma sessão pode manter no servidor à espera de serem
+    /// buscados. Cada um segura um descritor aberto e espaço em disco até o
+    /// download ou a expiração, então o teto é o que impede uma sessão só de
+    /// virar depósito.
+    /// </summary>
+    public int MaxPendingFilesPerSession { get; set; } = 3;
+
     /// <summary>Convidados simultâneos por sessão. O MVP usa 1; o modelo suporta mais sem alteração de código.</summary>
     public int MaxGuestsPerSession { get; set; } = 1;
 

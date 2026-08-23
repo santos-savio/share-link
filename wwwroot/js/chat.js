@@ -4,6 +4,7 @@
 
 import { createTransport, Transport } from './transport.js';
 import { sendFile, createFileReceiver } from './filetransfer.js';
+import { uploadToServer, downloadFromServer } from './relay.js';
 
 const elements = {
   status: document.getElementById('status'),
@@ -243,6 +244,31 @@ function appendFileMessage({ name, size, mine }) {
       link.textContent = 'Baixar';
       meta.append(link);
       scrollToEnd();
+
+      return link;
+    },
+
+    /** Botão de ação na própria bolha, para buscar o que está no servidor. */
+    action(label, handler) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'file-download';
+      button.textContent = label;
+
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+
+        try {
+          await handler(button);
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      meta.append(button);
+      scrollToEnd();
+
+      return button;
     },
 
     fail(text) {
@@ -386,6 +412,35 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
 
   connection.on('ReceiveMessage', message => appendMessage(message, role));
 
+  connection.on('ReceiveFile', announcement => {
+    // O anúncio vai ao grupo inteiro, inclusive a quem enviou — e esse já tem a
+    // própria bolha na tela desde o início do envio.
+    if (announcement.sender === role) return;
+
+    const bubble = appendFileMessage({
+      name: announcement.name,
+      size: announcement.size,
+      mine: false
+    });
+
+    bubble.action('Baixar', async button => {
+      button.textContent = 'Baixando…';
+
+      try {
+        const blob = await downloadFromServer({ code, token, id: announcement.id });
+        const link = bubble.ready(blob);
+        button.remove();
+
+        // O clique já veio do usuário, então disparar aqui poupa um segundo
+        // toque. Se o navegador recusar, o link continua na bolha.
+        link.click();
+      } catch (error) {
+        button.textContent = 'Baixar';
+        showError(error.message);
+      }
+    });
+  });
+
   connection.on('PeerJoined', peerRole => {
     appendSystemLine(`${roleLabel(peerRole)} entrou na sessão.`);
     peerPresent = true;
@@ -510,11 +565,6 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
 
     const channel = transport.channel;
 
-    if (!channel) {
-      showError('Sem conexão direta com o outro aparelho. O envio pelo servidor entra na etapa seguinte.');
-      return;
-    }
-
     // Um arquivo por vez: o receptor remonta uma transferência de cada vez, e
     // duas em paralelo embaralhariam os pedaços no mesmo canal.
     elements.attach.disabled = true;
@@ -522,10 +572,19 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
     const bubble = appendFileMessage({ name: file.name, size: file.size, mine: true });
 
     try {
-      await sendFile(channel, file, {
-        maxMessageSize: transport.maxMessageSize,
-        onProgress: sent => bubble.progress(sent)
-      });
+      if (channel) {
+        await sendFile(channel, file, {
+          maxMessageSize: transport.maxMessageSize,
+          onProgress: sent => bubble.progress(sent)
+        });
+      } else {
+        await uploadToServer({
+          code,
+          token,
+          file,
+          onProgress: sent => bubble.progress(sent)
+        });
+      }
 
       bubble.sent();
     } catch (error) {

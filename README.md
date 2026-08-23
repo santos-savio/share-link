@@ -131,6 +131,9 @@ location /share-link/ {
     proxy_set_header X-Forwarded-Prefix /share-link;
 
     proxy_read_timeout 300s;
+
+    client_max_body_size 40m;
+    proxy_request_buffering off;
 }
 ```
 
@@ -141,6 +144,8 @@ Por que cada peça importa:
 - **`Connection` pelo `map`** em vez de `"upgrade"` fixo. Fixo, toda requisição comum — inclusive o long polling, para o qual o SignalR cai quando o WebSocket não passa — carrega um pedido de upgrade que não existe.
 - **`X-Forwarded-Proto` pelo `map`**. Usar `$http_x_forwarded_proto` direto envia o header **vazio** quando não há outro proxy na frente, e a aplicação continua enxergando `http`. Com o `map`, o valor cai para `$scheme` nesse caso e o repasse continua correto se um dia houver um proxy à frente.
 - **`proxy_read_timeout`** com folga. O SignalR envia keep-alive a cada 15 segundos, então os 60s padrão do nginx até sobrevivem; a folga evita quedas espúrias em rede ruim.
+- **`client_max_body_size`** acima do teto de arquivo. O padrão do nginx é **1 MB**: sem esta linha, um envio pelo servidor morre com 413 antes de chegar à aplicação, e o corpo da resposta é a página de erro do nginx, não a mensagem da aplicação.
+- **`proxy_request_buffering off`** faz o arquivo fluir para a aplicação em vez de o nginx gravá-lo inteiro num temporário próprio antes de repassar — o que, num Raspberry com sistema em cartão SD, significa escrever os mesmos megabytes duas vezes.
 - **`X-Forwarded-Prefix`** é enviado mas hoje a aplicação não o consome, porque o nginx já remove o prefixo e o front-end monta as URLs a partir de `window.location`. Fica pronto para o dia em que algo no servidor precise gerar link absoluto.
 
 Para conferir que o WebSocket subiu, veja no DevTools se a conexão do hub aparece como `101 Switching Protocols`. Se cair para long polling, os headers de upgrade não estão chegando.

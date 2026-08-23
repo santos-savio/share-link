@@ -17,6 +17,13 @@ public interface ISessionClient
     /// </summary>
     Task ReceiveSignal(string payload);
 
+    /// <summary>
+    /// Há um arquivo no servidor esperando ser buscado. Não entra no histórico
+    /// da sessão: o arquivo é apagado no primeiro download completo, e um
+    /// registro sobrevivente viraria link morto depois de uma rejunção.
+    /// </summary>
+    Task ReceiveFile(FileAnnouncement announcement);
+
     /// <summary>O outro participante entrou na sessão.</summary>
     Task PeerJoined(string role);
 

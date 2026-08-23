@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 
 namespace ShareLink.Models;
@@ -23,6 +24,32 @@ public enum JoinOutcome
 /// <param name="Sender">"host", "guest" ou "system".</param>
 public sealed record ChatMessage(string Id, string Sender, string Text, DateTimeOffset SentAt);
 
+/// <summary>Aviso de que há um arquivo no servidor esperando ser buscado.</summary>
+public sealed record FileAnnouncement(string Id, string Sender, string Name, long Size, DateTimeOffset SentAt);
+
+/// <summary>
+/// Arquivo enviado pelo servidor, à espera de que o outro lado o busque.
+/// </summary>
+/// <param name="Content">
+/// Aberto com <see cref="FileOptions.DeleteOnClose"/>: o sistema operacional
+/// apaga o arquivo quando este descritor fechar, inclusive se o processo for
+/// morto. É o que impede sobra em disco sem depender de varredura.
+/// </param>
+public sealed class PendingFile(string id, string sender, string name, long size, FileStream content) : IDisposable
+{
+    public string Id { get; } = id;
+
+    public string Sender { get; } = sender;
+
+    public string Name { get; } = name;
+
+    public long Size { get; } = size;
+
+    public FileStream Content { get; } = content;
+
+    public void Dispose() => Content.Dispose();
+}
+
 /// <summary>
 /// Estado de uma sessão de chat, apenas em memória. Várias conexões tocam a
 /// mesma instância ao mesmo tempo, então toda leitura e escrita de estado
@@ -36,20 +63,26 @@ public sealed class Session
     private readonly Dictionary<string, string> _guestsByToken = [];
 
     private readonly Queue<ChatMessage> _recentMessages = new();
+
+    /// <summary>Arquivos no servidor esperando o outro lado buscar.</summary>
+    private readonly Dictionary<string, PendingFile> _files = [];
+
     private readonly int _maxMessages;
     private readonly int _maxGuests;
+    private readonly int _maxPendingFiles;
 
     private string? _hostConnectionId;
     private string? _hostToken;
     private DateTimeOffset _lastActivityAt;
 
-    public Session(string code, int maxMessages, int maxGuests)
+    public Session(string code, int maxMessages, int maxGuests, int maxPendingFiles)
     {
         Code = code;
         CreatedAt = DateTimeOffset.UtcNow;
         _lastActivityAt = CreatedAt;
         _maxMessages = maxMessages;
         _maxGuests = maxGuests;
+        _maxPendingFiles = maxPendingFiles;
     }
 
     public string Code { get; }
@@ -186,6 +219,92 @@ public sealed class Session
 
             role = default;
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Descobre o papel a partir do token do participante. É por aqui que os
+    /// endpoints HTTP autorizam: lá não existe ConnectionId, e o token já é a
+    /// credencial que o cliente guarda desde a entrada.
+    /// </summary>
+    public bool TryGetRoleByToken(string? token, out ParticipantRole role)
+    {
+        lock (_sync)
+        {
+            if (!string.IsNullOrEmpty(token))
+            {
+                if (token == _hostToken)
+                {
+                    role = ParticipantRole.Host;
+                    return true;
+                }
+
+                if (_guestsByToken.ContainsKey(token))
+                {
+                    role = ParticipantRole.Guest;
+                    return true;
+                }
+            }
+
+            role = default;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Registra um arquivo à espera de ser buscado. Recusa acima do teto para que
+    /// o disco do servidor não vire depósito de uma sessão só.
+    /// </summary>
+    public bool TryAddFile(PendingFile file)
+    {
+        lock (_sync)
+        {
+            if (_files.Count >= _maxPendingFiles) return false;
+
+            _files[file.Id] = file;
+            _lastActivityAt = DateTimeOffset.UtcNow;
+            return true;
+        }
+    }
+
+    public bool TryGetFile(string id, [NotNullWhen(true)] out PendingFile? file)
+    {
+        lock (_sync) return _files.TryGetValue(id, out file);
+    }
+
+    /// <summary>Tira o arquivo da sessão e o apaga do disco.</summary>
+    public void RemoveFile(string id)
+    {
+        PendingFile? file;
+
+        lock (_sync)
+        {
+            if (!_files.Remove(id, out file)) return;
+        }
+
+        // Fora do lock: fechar o descritor é E/S, e nenhuma outra operação da
+        // sessão precisa esperar por ela.
+        file.Dispose();
+    }
+
+    /// <summary>
+    /// Solta todos os arquivos da sessão. Chamado quando a sessão sai do store:
+    /// sem isto os descritores ficariam abertos até o processo morrer, e com
+    /// eles os arquivos temporários.
+    /// </summary>
+    public void DisposeFiles()
+    {
+        PendingFile[] pending;
+
+        lock (_sync)
+        {
+            pending = [.. _files.Values];
+            _files.Clear();
+        }
+
+        foreach (var file in pending)
+        {
+            file.Dispose();
         }
     }
 

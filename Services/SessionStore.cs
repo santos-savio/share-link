@@ -24,7 +24,11 @@ public sealed class SessionStore(IOptions<ShareLinkOptions> options, ILogger<Ses
     {
         for (var attempt = 0; attempt < MaxCodeGenerationAttempts; attempt++)
         {
-            var session = new Session(SessionCodeGenerator.Next(), _options.MaxMessagesPerSession, _options.MaxGuestsPerSession);
+            var session = new Session(
+                SessionCodeGenerator.Next(),
+                _options.MaxMessagesPerSession,
+                _options.MaxGuestsPerSession,
+                _options.MaxPendingFilesPerSession);
 
             if (_sessions.TryAdd(session.Code, session))
             {
@@ -61,10 +65,13 @@ public sealed class SessionStore(IOptions<ShareLinkOptions> options, ILogger<Ses
     public bool Remove(string? code)
     {
         var normalized = Normalize(code);
-        var removed = _sessions.TryRemove(normalized, out _);
+        var removed = _sessions.TryRemove(normalized, out var session);
 
         if (removed)
         {
+            // Os arquivos pendentes vão junto: enquanto o descritor estiver
+            // aberto, o temporário continua ocupando disco.
+            session!.DisposeFiles();
             logger.LogInformation("Sessão {Code} removida.", normalized);
         }
 
@@ -83,6 +90,7 @@ public sealed class SessionStore(IOptions<ShareLinkOptions> options, ILogger<Ses
         {
             if (session.IsExpired(_options.SessionTimeout) && _sessions.TryRemove(session.Code, out var removed))
             {
+                removed.DisposeFiles();
                 expired.Add(removed);
             }
         }
