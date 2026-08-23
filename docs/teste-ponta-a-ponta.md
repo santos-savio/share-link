@@ -126,3 +126,82 @@ Repita os itens 1, 2 e 6 com a aplicação publicada em `https://dominio.com/qrc
 - [ ] Recarregar a página do computador mais de dez vezes em um minuto passa a
       mostrar "Muitas sessões criadas neste minuto", e não um erro cru.
 - [ ] O limite não afeta a conversa em andamento: o hub fica fora do limitador.
+
+## 12. Envio de arquivos
+
+> **Esta seção precisa da implantação HTTPS.** `RTCPeerConnection` só existe em
+> contexto seguro, então em `http://<IP>:5012` o caminho direto nunca sobe e
+> todos os itens de "conexão direta" abaixo ficariam presos no servidor. E
+> `https://localhost:7012` também não serve: o celular não alcança `localhost`
+> nem confia no certificado de desenvolvimento.
+
+### 12.1 O limite aparece antes da escolha
+
+- [ ] Com os dois aparelhos na mesma rede, o botão lê **"Anexar — até 500 MB,
+      direto"**, e isso **antes de qualquer clique**.
+- [ ] Tire o celular do Wi-Fi (dados móveis). Em alguns segundos o botão passa a
+      ler **"até 35 MB, pelo servidor"**, sem recarregar a página.
+- [ ] Volte ao Wi-Fi: o rótulo volta a dizer "direto".
+- [ ] Em nenhuma dessas trocas aparece erro na tela — trocar de rota é normal.
+
+### 12.2 Conexão direta
+
+- [ ] No `chrome://webrtc-internals`, os candidatos são só `typ host` ou nomes
+      `.local`. **Nenhum `srflx`, nenhum `relay`** — se aparecer algum, o
+      arquivo estaria saindo da rede local.
+- [ ] Envie um arquivo grande (algumas centenas de MB) do computador para o
+      celular. O progresso avança e termina.
+- [ ] **No log do servidor não aparece requisição nenhuma** durante o envio.
+- [ ] O arquivo recebido abre corretamente e tem o mesmo tamanho do original.
+- [ ] Envie no sentido contrário, do celular para o computador.
+- [ ] Um nome com acentos e com `<b>` aparece literal, sem virar negrito.
+
+### 12.3 Envio pelo servidor
+
+- [ ] Com o celular em dados móveis, envie um arquivo de uns 20 MB. A bolha
+      mostra o progresso da subida e o outro lado recebe um botão **Baixar**.
+- [ ] Clicar em Baixar entrega o arquivo íntegro.
+- [ ] Clicar em Baixar uma segunda vez falha com "não está mais no servidor" —
+      o arquivo é apagado na primeira entrega completa.
+
+### 12.4 Recusa por tamanho
+
+- [ ] No estado "pelo servidor", escolher um arquivo de mais de 35 MB mostra
+      quanto ele tem, qual é o limite e **que basta voltar à mesma rede**.
+- [ ] Nessa recusa, **nenhuma requisição aparece no DevTools**: o arquivo nem
+      chega a subir.
+- [ ] Contornando o front (`curl` direto no endpoint, com o token do
+      `sessionStorage`), um arquivo acima do limite é recusado com **413**.
+- [ ] Um arquivo de exatamente 35 MB **passa** pelo servidor. Se der 413, ou o
+      `client_max_body_size` do nginx está baixo, ou o teto do Kestrel não foi
+      elevado no endpoint.
+
+### 12.5 Queda no meio
+
+- [ ] Comece a enviar um arquivo de uns 10 MB pela conexão direta e derrube o
+      Wi-Fi do celular por instantes. A transferência **conclui pelo servidor
+      sozinha**, e o rótulo passa a dizer "pelo servidor".
+- [ ] Repita com um arquivo acima de 35 MB: agora a falha é imediata e a bolha
+      ganha um botão **Tentar de novo** que funciona.
+- [ ] Do lado que recebia, a bolha não fica com o progresso congelado: ela é
+      encerrada com o motivo da queda.
+
+### 12.6 Arquivo hostil
+
+- [ ] Envie um `.html` qualquer. Abrir a URL do download direto no navegador
+      **baixa o arquivo, não renderiza a página**.
+- [ ] No DevTools, a resposta traz `Content-Type: application/octet-stream`,
+      `Content-Disposition: attachment` e `X-Content-Type-Options: nosniff`.
+
+### 12.7 Limpeza
+
+- [ ] Suba um arquivo pelo servidor e **não** o baixe. Deixe a sessão expirar
+      (use `--ShareLink:SessionTimeoutMinutes=0.5`).
+- [ ] O arquivo temporário some do disco do servidor quando a sessão expira.
+- [ ] Parar a aplicação com um arquivo pendente (`Ctrl+C`, ou
+      `systemctl stop`) também não deixa sobra: o contêiner de DI descarta o
+      `SessionStore` no encerramento.
+- [ ] **`kill -9` é a exceção conhecida.** No Linux o `DeleteOnClose` do .NET
+      apaga o arquivo no dispose, não pelo sistema operacional, então uma morte
+      abrupta deixa o temporário em `/tmp`. Se isso incomodar, uma varredura por
+      idade resolve — hoje o processo não faz.

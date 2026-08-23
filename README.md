@@ -4,14 +4,14 @@ Canal de comunicação bidirecional e **efêmero** entre o computador e o celula
 
 ## O que é
 
-Quase sempre a necessidade é a mesma: passar um link, um trecho de texto ou um código do PC para o celular (ou o contrário) sem recorrer a WhatsApp, e-mail para si mesmo ou cabo USB.
+Quase sempre a necessidade é a mesma: passar um link, um trecho de texto, um código ou um arquivo do PC para o celular (ou o contrário) sem recorrer a WhatsApp, e-mail para si mesmo ou cabo USB.
 
 O ShareLink resolve isso com um mini-chat temporário:
 
 1. Você abre a aplicação no computador.
 2. A aplicação cria uma sessão e mostra um QR code.
 3. Você aponta a câmera do celular e abre o link.
-4. Os dois dispositivos passam a trocar mensagens em tempo real, nos dois sentidos.
+4. Os dois dispositivos passam a trocar mensagens e arquivos em tempo real, nos dois sentidos.
 5. Quando a sessão expira por inatividade, o histórico é descartado — nada fica salvo.
 
 ## Fluxo
@@ -41,8 +41,9 @@ sequenceDiagram
 - Como Groups do SignalR **não podem ser consultados** — não há API para perguntar se um grupo existe ou quem está nele —, um `SessionStore` em memória é a fonte de verdade sobre códigos válidos, participantes e última atividade.
 - O código de sessão tem 6 caracteres sorteados com `RandomNumberGenerator`, num alfabeto sem `0`, `O`, `1` e `I`, para poder ser digitado à mão quando a câmera falha.
 - Cada sessão guarda as **últimas 50 mensagens**, reenviadas a quem entra e a quem reconecta.
-- Ao entrar, o participante recebe um **token**. Reconectar cria uma conexão nova, que pode chegar antes de o servidor perceber a queda da anterior; o token é o que permite retomar o próprio lugar sem esbarrar na conexão morta, e sem afrouxar a recusa a um terceiro aparelho.
-- Nada é gravado em disco. Reiniciar o processo derruba todas as sessões.
+- Ao entrar, o participante recebe um **token**. Reconectar cria uma conexão nova, que pode chegar antes de o servidor perceber a queda da anterior; o token é o que permite retomar o próprio lugar sem esbarrar na conexão morta, e sem afrouxar a recusa a um terceiro aparelho. O mesmo token autoriza os endpoints de arquivo, onde não existe `ConnectionId`.
+- Arquivo tem **dois caminhos**: direto entre os aparelhos por WebRTC quando eles se alcançam na rede local, e pelo servidor quando não. A escolha é automática e já está decidida antes de alguém anexar nada.
+- Mensagens vivem só em memória. O único toque em disco é o arquivo enviado pelo servidor, num temporário que some assim que o outro lado o busca. Reiniciar o processo derruba todas as sessões.
 
 ## Requisitos
 
@@ -76,6 +77,23 @@ http://<IP-DA-MAQUINA>:5012/
 
 O QR code é montado a partir do endereço da página aberta. Abrindo por `localhost`, o QR carrega `localhost` — que no celular significa o próprio celular, e o pareamento falha sem explicação aparente. Descubra o IP com `ipconfig` (Windows) ou `ip addr` (Linux/macOS); na primeira execução o firewall deve pedir liberação da porta.
 
+## Envio de arquivos
+
+O botão de anexo mostra o limite vigente **antes da escolha**, porque o limite depende de por onde o arquivo vai sair:
+
+| Caminho | Quando é usado | Teto |
+| --- | --- | --- |
+| **Direto**, entre os aparelhos | os dois se alcançam na rede local | 500 MB |
+| **Pelo servidor** | qualquer outro caso | 35 MB |
+
+A negociação do canal direto começa assim que o outro lado entra na sessão, em segundo plano, e o rótulo do botão muda sozinho quando ela conclui. A ideia é nunca deixar alguém escolher um arquivo para só então descobrir que ele não passa.
+
+O canal direto é configurado com `iceServers` **vazio**. Sem STUN não há candidato reflexivo, e sem TURN não há relay: sobram apenas candidatos *host*, que são os IPs locais dos aparelhos. A conexão só se estabelece se os dois se alcançarem diretamente — a lista vazia é, ela própria, a garantia de que o arquivo não sai da rede local, em vez de uma política a fiscalizar depois.
+
+**O caminho direto exige HTTPS.** `RTCPeerConnection` só existe em contexto seguro, então a aplicação aberta como `http://<IP>:5012` na rede local sempre cai para o servidor. É a mesma restrição que já vale para o botão de copiar.
+
+Se o canal direto cair no meio de um envio, a transferência refaz pelo servidor sozinha, desde que o arquivo caiba no teto de lá. Acima disso a falha é imediata, com botão de repetir.
+
 ## Configuração
 
 Seção `ShareLink` do [appsettings.json](appsettings.json). Qualquer chave pode ser sobrescrita na linha de comando, por exemplo `--ShareLink:SessionTimeoutMinutes=0.5`.
@@ -85,10 +103,14 @@ Seção `ShareLink` do [appsettings.json](appsettings.json). Qualquer chave pode
 | `SessionTimeoutMinutes` | `30` | Inatividade que encerra a sessão. Janela **deslizante**: conversar renova. Aceita fração de minuto. |
 | `MaxMessagesPerSession` | `50` | Mensagens guardadas para reenviar a quem entra ou reconecta. |
 | `MaxMessageLength` | `2000` | Limite de caracteres por mensagem. |
+| `MaxSignalPayloadLength` | `16384` | Limite de um sinal de negociação do canal direto. Um SDP cabe com folga, e o teto mantém distância do limite de 32 KB do SignalR. |
+| `MaxDirectFileBytes` | `524288000` | Teto de arquivo pelo canal direto — 500 MiB. |
+| `MaxRelayFileBytes` | `36700160` | Teto de arquivo pelo servidor — 35 MiB. Mexer aqui exige rever o `client_max_body_size` do nginx. |
+| `MaxPendingFilesPerSession` | `3` | Arquivos que uma sessão pode manter no servidor esperando serem buscados. |
 | `MaxGuestsPerSession` | `1` | Convidados simultâneos. O servidor aceita mais; a interface é escrita para dois participantes. |
 | `CleanupIntervalSeconds` | `60` | Intervalo entre varreduras de sessões expiradas. |
 
-Há ainda um limitador de requisições por IP, fixo no código: 20 consultas de código e 10 criações de sessão por minuto. É o que torna inviável varrer o espaço de códigos de 6 caracteres. O hub e os arquivos estáticos ficam fora do limitador.
+Há ainda um limitador de requisições por IP, fixo no código: 20 consultas de código, 10 criações de sessão e 10 envios de arquivo por minuto. É o que torna inviável varrer o espaço de códigos de 6 caracteres. O hub e os arquivos estáticos ficam fora do limitador.
 
 ## Publicar atrás do nginx
 
@@ -154,29 +176,37 @@ Para conferir que o WebSocket subiu, veja no DevTools se a conexão do hub apare
 
 - **Quem tem o código entra.** Trate o QR como senha temporária: não o deixe em tela compartilhada nem em print. O limitador e a expiração cobrem a força bruta, não a exposição.
 - **Sem autenticação e sem contas.** A proteção é o código ser curto, secreto e de vida curta.
-- **Sem criptografia ponta a ponta.** O servidor lê as mensagens em memória. Publicado atrás do nginx com TLS, o transporte é cifrado.
-- **Nada é persistido.** As mensagens vivem no processo e somem com a sessão ou com o restart.
-- O texto recebido é sempre inserido com `textContent`, nunca `innerHTML`.
+- **Mensagens não são cifradas ponta a ponta.** O servidor as lê em memória. Publicado atrás do nginx com TLS, o transporte é cifrado.
+- **Arquivo pelo caminho direto não toca o servidor**, e o WebRTC o cifra com DTLS: é uma garantia mais forte que a das mensagens.
+- **Arquivo pelo servidor repousa em disco.** Vai para um temporário aberto com `DeleteOnClose`, e some no primeiro download completo, na expiração da sessão ou no encerramento da aplicação. É a única coisa nesta aplicação que chega a tocar disco. Um `kill -9` é a exceção: no Linux o `DeleteOnClose` age no dispose, não pelo sistema operacional, então uma morte abrupta deixa o temporário para trás.
+- **O download nunca é servido inline.** Sempre `application/octet-stream` com `Content-Disposition: attachment` e `nosniff`, nunca o tipo declarado por quem enviou — um `.html` servido inline seria XSS armazenado nesta mesma origem, com os tokens do `sessionStorage` ao alcance.
+- **As mensagens não são persistidas.** Vivem no processo e somem com a sessão ou com o restart.
+- O texto recebido é sempre inserido com `textContent`, nunca `innerHTML`. Vale também para nome de arquivo.
 
 ## Estrutura
 
 ```
 share-link/
-├─ Program.cs                      # pipeline, DI, endpoints HTTP, MapHub
-├─ Models/Session.cs               # Session, ChatMessage, papéis e tokens
+├─ Program.cs                      # pipeline, DI, endpoints de sessão e arquivo
+├─ Models/Session.cs               # Session, ChatMessage, PendingFile, papéis e tokens
 ├─ Options/ShareLinkOptions.cs     # seção ShareLink do appsettings
 ├─ Services/
 │  ├─ SessionCodeGenerator.cs      # código de 6 caracteres
 │  ├─ SessionStore.cs              # sessões vivas, em memória
 │  └─ SessionCleanupService.cs     # varredura das sessões expiradas
 ├─ Hubs/
-│  ├─ SessionHub.cs                # entrada, saída e troca de mensagens
+│  ├─ SessionHub.cs                # entrada, saída, mensagens e sinalização
 │  └─ ISessionClient.cs            # contrato tipado do cliente
 ├─ wwwroot/
 │  ├─ index.html                   # anfitrião: QR + chat
 │  ├─ join.html                    # convidado: entrada por código + chat
 │  ├─ css/app.css
-│  └─ js/{chat.js, host.js, guest.js}
+│  └─ js/
+│     ├─ chat.js                   # interface, ciclo da sessão e envio
+│     ├─ host.js, guest.js         # ponto de entrada de cada tela
+│     ├─ transport.js              # negociação do canal direto
+│     ├─ filetransfer.js           # protocolo de pedaços e política de rota
+│     └─ relay.js                  # envio e busca pelo servidor
 └─ docs/teste-ponta-a-ponta.md     # roteiro de verificação manual
 ```
 
