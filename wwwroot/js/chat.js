@@ -3,6 +3,7 @@
 // página, para que a aplicação funcione servida em subcaminho.
 
 import { createTransport, Transport } from './transport.js';
+import { sendFile, createFileReceiver } from './filetransfer.js';
 
 const elements = {
   status: document.getElementById('status'),
@@ -193,6 +194,64 @@ function appendMessage(message, myRole) {
   scrollToEnd();
 }
 
+/**
+ * Bolha de arquivo. Nasce mostrando o progresso e termina como link de download
+ * — no receptor — ou como marca de enviado, no remetente. Fica na mesma lista
+ * das mensagens porque, para quem usa, é a mesma conversa.
+ */
+function appendFileMessage({ name, size, mine }) {
+  const item = document.createElement('li');
+  item.className = mine ? 'message mine' : 'message';
+
+  const title = document.createElement('p');
+  title.className = 'message-text file-name';
+  // textContent, nunca innerHTML: o nome vem do outro aparelho.
+  title.textContent = name;
+
+  const status = document.createElement('span');
+  status.className = 'file-status';
+  status.textContent = formatSize(size);
+
+  const meta = document.createElement('div');
+  meta.className = 'message-meta';
+  meta.append(status);
+
+  item.append(title, meta);
+  elements.messages.append(item);
+  scrollToEnd();
+
+  return {
+    progress(done) {
+      const pct = size > 0 ? Math.round((done / size) * 100) : 100;
+      status.textContent = `${formatSize(size)} · ${pct}%`;
+    },
+
+    sent() {
+      status.textContent = `${formatSize(size)} · enviado`;
+    },
+
+    ready(blob) {
+      status.textContent = formatSize(size);
+
+      const link = document.createElement('a');
+      link.className = 'file-download';
+      // O objeto fica vivo enquanto a aba estiver aberta: revogar aqui
+      // quebraria um segundo clique, e o arquivo já está em memória de todo
+      // jeito por ter sido remontado a partir dos pedaços.
+      link.href = URL.createObjectURL(blob);
+      link.download = name;
+      link.textContent = 'Baixar';
+      meta.append(link);
+      scrollToEnd();
+    },
+
+    fail(text) {
+      status.textContent = text;
+      status.classList.add('failed');
+    }
+  };
+}
+
 const roleLabel = role => (role === 'host' ? 'O computador' : 'O celular');
 
 /** Tamanho legível. O arredondamento é para leitura; quem valida usa os bytes. */
@@ -255,13 +314,42 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
     .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
     .build();
 
+  /** Bolhas dos arquivos que estão chegando, por id da transferência. */
+  const incoming = new Map();
+
+  const receiveFile = createFileReceiver({
+    onStart: file => incoming.set(
+      file.id,
+      appendFileMessage({ name: file.name, size: file.size, mine: false })),
+
+    onProgress: file => incoming.get(file.id)?.progress(file.received),
+
+    onDone: (file, blob) => {
+      incoming.get(file.id)?.ready(blob);
+      incoming.delete(file.id);
+    },
+
+    onAbort: (file, reason) => {
+      incoming.get(file.id)?.fail(reason);
+      incoming.delete(file.id);
+    }
+  });
+
   // Criado antes de a conexão subir, para que o ouvinte de sinalização já esteja
   // no lugar quando o outro lado propuser o canal.
   const transport = createTransport({
     connection,
     code,
     role,
+    onMessage: receiveFile.handleMessage,
     onStateChange: state => {
+      // Ao perder o canal direto, uma transferência em curso não tem como
+      // continuar nem como ser avisada pelo outro lado: encerrar aqui é o que
+      // evita deixar um progresso parado para sempre na tela.
+      if (transportState === Transport.Direct && state !== Transport.Direct) {
+        receiveFile.channelLost();
+      }
+
       transportState = state;
       refreshAttachLabel();
       onTransportChange?.(state);
@@ -397,7 +485,7 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
   // próprio, e é o rótulo que carrega o limite.
   elements.attach.addEventListener('click', () => elements.file.click());
 
-  elements.file.addEventListener('change', () => {
+  elements.file.addEventListener('change', async () => {
     const file = elements.file.files?.[0];
 
     // Zerado já aqui para que escolher o mesmo arquivo de novo, depois de um
@@ -420,8 +508,32 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
 
     clearError();
 
-    // A transferência entra na etapa seguinte. O que esta já garante é que o
-    // limite foi decidido e informado antes da escolha, não depois dela.
+    const channel = transport.channel;
+
+    if (!channel) {
+      showError('Sem conexão direta com o outro aparelho. O envio pelo servidor entra na etapa seguinte.');
+      return;
+    }
+
+    // Um arquivo por vez: o receptor remonta uma transferência de cada vez, e
+    // duas em paralelo embaralhariam os pedaços no mesmo canal.
+    elements.attach.disabled = true;
+
+    const bubble = appendFileMessage({ name: file.name, size: file.size, mine: true });
+
+    try {
+      await sendFile(channel, file, {
+        maxMessageSize: transport.maxMessageSize,
+        onProgress: sent => bubble.progress(sent)
+      });
+
+      bubble.sent();
+    } catch (error) {
+      bubble.fail('falhou');
+      showError(error.message);
+    } finally {
+      elements.attach.disabled = false;
+    }
   });
 
   // Com revealOnPair, a tela do anfitrião fica só com o QR e o código até o

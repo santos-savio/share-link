@@ -58,8 +58,9 @@ function gathered(pc) {
  * @param {'host'|'guest'} params.role Papel deste aparelho.
  * @param {(state: string) => void} [params.onStateChange] Chamado a cada mudança de transporte.
  * @param {(channel: RTCDataChannel) => void} [params.onChannelOpen] Canal pronto para uso.
+ * @param {(data: string|ArrayBuffer) => void} [params.onMessage] Dado recebido pelo canal.
  */
-export function createTransport({ connection, code, role, onStateChange, onChannelOpen }) {
+export function createTransport({ connection, code, role, onStateChange, onChannelOpen, onMessage }) {
   // Papéis fixos evitam glare sem precisar de código de desempate: só o
   // anfitrião propõe, o convidado apenas responde.
   const isHost = role === 'host';
@@ -91,7 +92,7 @@ export function createTransport({ connection, code, role, onStateChange, onChann
     timer = null;
 
     if (channel) {
-      channel.onopen = channel.onclose = channel.onerror = null;
+      channel.onopen = channel.onclose = channel.onerror = channel.onmessage = null;
       try { channel.close(); } catch { /* já fechado */ }
       channel = null;
     }
@@ -106,6 +107,10 @@ export function createTransport({ connection, code, role, onStateChange, onChann
   function adopt(dc) {
     channel = dc;
     channel.binaryType = 'arraybuffer';
+
+    // Ligado aqui, e não no onopen: um pedaço que chegasse entre a abertura do
+    // canal e o registro do tratador se perderia em silêncio.
+    channel.onmessage = event => onMessage?.(event.data);
 
     channel.onopen = () => {
       clearTimeout(timer);
@@ -223,6 +228,12 @@ export function createTransport({ connection, code, role, onStateChange, onChann
 
     /** Canal aberto, ou null. Quem envia arquivo pergunta por aqui. */
     get channel() { return state === Transport.Direct ? channel : null; },
+
+    /**
+     * Maior mensagem que a conexão aceita. Quem envia usa para dimensionar o
+     * pedaço: passar deste teto derruba o canal em vez de fatiar sozinho.
+     */
+    get maxMessageSize() { return pc?.sctp?.maxMessageSize ?? 0; },
 
     /**
      * Começa (ou recomeça) a avaliação. Chamado quando o outro lado aparece,
