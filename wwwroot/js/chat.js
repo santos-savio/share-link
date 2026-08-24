@@ -639,6 +639,25 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
     }
   });
 
+  /** Volta o campo a uma linha, para não ficar esticado após enviar ou limpar. */
+  function resetTextHeight() {
+    elements.text.style.height = 'auto';
+  }
+
+  // Cresce junto com o texto até o teto do CSS (max-height), onde passa a rolar.
+  elements.text.addEventListener('input', () => {
+    resetTextHeight();
+    elements.text.style.height = `${elements.text.scrollHeight}px`;
+  });
+
+  // Enter envia; Shift+Enter quebra a linha, como em qualquer chat.
+  elements.text.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.shiftKey) return;
+
+    event.preventDefault();
+    elements.composer.requestSubmit();
+  });
+
   elements.composer.addEventListener('submit', async event => {
     event.preventDefault();
 
@@ -646,6 +665,7 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
     if (text.length === 0) return;
 
     elements.text.value = '';
+    resetTextHeight();
 
     try {
       await connection.invoke('SendMessage', code, text);
@@ -653,6 +673,7 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
     } catch (error) {
       // Devolve o texto ao campo para que nada se perca.
       elements.text.value = text;
+      elements.text.style.height = `${elements.text.scrollHeight}px`;
       showError(hubErrorMessage(error));
     }
   });

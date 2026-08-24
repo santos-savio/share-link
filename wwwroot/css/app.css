@@ -240,21 +240,25 @@ body {
 
 .composer {
   display: flex;
+  align-items: flex-end;
   gap: 0.5rem;
 }
 
-.composer input {
+.composer textarea {
   flex: 1;
   min-width: 0;
   padding: 0.625rem 0.75rem;
   font: inherit;
+  resize: none;
+  max-height: 8rem;
+  overflow-y: auto;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
 }
 
-.composer input:focus-visible,
+.composer textarea:focus-visible,
 .composer button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
