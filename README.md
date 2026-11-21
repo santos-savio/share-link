@@ -220,4 +220,4 @@ Não há projeto de testes automatizados. A verificação é o roteiro manual em
 
 ## Licença
 
-A definir.
+Distribuído sob a licença [MIT](LICENSE).
