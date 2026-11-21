@@ -134,6 +134,35 @@ public sealed class SessionHub(
         await Clients.OthersInGroup(session.Code).ReceiveSignal(payload);
     }
 
+    /// <summary>
+    /// Encerra a sessão a pedido de um dos participantes: o histórico e os arquivos
+    /// pendentes são descartados na hora, sem esperar a expiração.
+    /// </summary>
+    public async Task EndSession(string code)
+    {
+        if (!store.TryGet(code, out var session))
+        {
+            throw new HubException("Sessão não encontrada ou expirada.");
+        }
+
+        // Só quem está na sessão pode encerrá-la; conhecer o código não basta.
+        if (!session.TryGetRole(Context.ConnectionId, out var role))
+        {
+            throw new HubException("Esta conexão não faz parte da sessão.");
+        }
+
+        // Remove antes de avisar, para que ninguém consiga rejuntar no intervalo.
+        // O grupo do SignalR continua alcançando quem está conectado.
+        store.Remove(session.Code);
+
+        await Clients.Group(session.Code).SessionEnded(role is ParticipantRole.Host
+            ? "a pedido do computador"
+            : "a pedido do celular");
+
+        logger.LogInformation("Sessão {Code} encerrada pela conexão {ConnectionId} ({Role}).",
+            session.Code, Context.ConnectionId, role);
+    }
+
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var session = store.RemoveConnection(Context.ConnectionId, out var role);
