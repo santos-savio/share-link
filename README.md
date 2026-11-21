@@ -2,6 +2,8 @@
 
 Canal de comunicação bidirecional e **efêmero** entre o computador e o celular, pareados por QR code.
 
+**Acesse:** [savio.dev.br/app/share-link](https://savio.dev.br/app/share-link/) — abra no computador e escaneie o QR code com o celular.
+
 ## O que é
 
 Quase sempre a necessidade é a mesma: passar um link, um trecho de texto, um código ou um arquivo do PC para o celular (ou o contrário) sem recorrer a WhatsApp, e-mail para si mesmo ou cabo USB.
