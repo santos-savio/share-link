@@ -13,6 +13,7 @@
       <div class="header-actions">
         <p class="status" id="status" data-state="connecting">iniciando…</p>
         <button type="button" class="reconnect" id="reconnect" hidden>Reconectar</button>
+        <button type="button" class="end-session" id="end-session" hidden>Encerrar</button>
       </div>
     </header>
 
@@ -22,7 +23,23 @@
       <p class="code" id="code">······</p>
       <p class="join-url"><a id="join-url" href="#"></a></p>
       <p class="paired-note">Celular conectado.</p>
+      <button type="button" class="link-button" id="open-join">Já tem um código? Entrar em outra sessão</button>
     </section>
+
+    <dialog class="dialog" id="join-dialog" aria-labelledby="join-dialog-title">
+      <form class="dialog-body" id="join-dialog-form" autocomplete="off">
+        <h2 id="join-dialog-title">Entrar em uma sessão</h2>
+        <label class="hint" for="join-dialog-code">Código exibido no outro aparelho</label>
+        <input id="join-dialog-code" class="code-input" type="text" maxlength="6" required
+               placeholder="ABC234"
+               autocapitalize="characters" autocorrect="off" spellcheck="false">
+        <p class="error" id="join-dialog-error" hidden></p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" id="join-dialog-cancel">Cancelar</button>
+          <button type="submit" class="primary" id="join-dialog-submit">Entrar</button>
+        </div>
+      </form>
+    </dialog>
 
     <p class="error" id="error" hidden></p>
 

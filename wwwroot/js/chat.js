@@ -15,6 +15,7 @@ import { uploadToServer, downloadFromServer } from './relay.js';
 const elements = {
   status: document.getElementById('status'),
   reconnect: document.getElementById('reconnect'),
+  endSession: document.getElementById('end-session'),
   restart: document.getElementById('restart'),
   chat: document.getElementById('chat'),
   messages: document.getElementById('messages'),
@@ -414,10 +415,11 @@ function refreshAttachLabel() {
  *   role: 'host'|'guest',
  *   onPeerChange?: (present: boolean) => void,
  *   onTransportChange?: (state: string) => void,
+ *   onEnded?: () => void,
  *   revealOnPair?: boolean
  * }} params
  */
-export async function startChat({ code, role, onPeerChange, onTransportChange, revealOnPair = false }) {
+export async function startChat({ code, role, onPeerChange, onTransportChange, onEnded, revealOnPair = false }) {
   // As bibliotecas vêm de CDN: sem internet ou com o CDN fora, o erro nativo
   // seria "signalR is not defined", que não diz nada a quem está usando.
   if (typeof signalR === 'undefined') {
@@ -524,6 +526,7 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
 
     joined = true;
     elements.reconnect.hidden = true;
+    elements.endSession.hidden = false;
     setStatus('online', 'conectado');
     clearError();
 
@@ -585,14 +588,22 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
     appendSystemLine(`Sessão encerrada: ${reason}`);
     setStatus('offline', 'sessão encerrada');
     elements.composer.hidden = true;
+    // Sem sessão não há para onde subir arquivo: o botão só levaria a um erro.
+    elements.attach.hidden = true;
     elements.reconnect.hidden = true;
+    elements.endSession.hidden = true;
     elements.restart.hidden = false;
     forgetToken(code, role);
     transport.reset();
     joined = false;
+    onEnded?.();
   });
 
-  connection.onreconnecting(() => setStatus('connecting', 'reconectando…'));
+  // Sem conexão, encerrar falharia; o botão volta quando a rejunção concluir.
+  connection.onreconnecting(() => {
+    setStatus('connecting', 'reconectando…');
+    elements.endSession.hidden = true;
+  });
 
   // A reconexão traz um ConnectionId novo, que não pertence a grupo nenhum.
   // Sem entrar outra vez, a conexão volta "viva" e o chat morre em silêncio.
@@ -608,8 +619,18 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
 
   connection.onclose(() => {
     setStatus('offline', 'desconectado');
+    elements.endSession.hidden = true;
     if (joined) elements.reconnect.hidden = false;
   });
+
+  /**
+   * Encerra a sessão para os dois lados. A tela não muda aqui: quem atualiza é
+   * o SessionEnded que o servidor devolve ao grupo, inclusive a quem pediu —
+   * assim os dois aparelhos passam pelo mesmo caminho.
+   */
+  function endSession() {
+    return connection.invoke('EndSession', code);
+  }
 
   setStatus('connecting', 'conectando…');
   await connection.start();
@@ -636,6 +657,21 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
       showError(hubErrorMessage(error));
     } finally {
       elements.reconnect.disabled = false;
+    }
+  });
+
+  elements.endSession.addEventListener('click', async () => {
+    // Descarta a conversa nos dois aparelhos e não tem volta: vale a confirmação.
+    if (!window.confirm('Encerrar a sessão? A conversa será apagada nos dois aparelhos.')) return;
+
+    elements.endSession.disabled = true;
+
+    try {
+      await endSession();
+    } catch (error) {
+      showError(hubErrorMessage(error));
+    } finally {
+      elements.endSession.disabled = false;
     }
   });
 
@@ -802,10 +838,47 @@ export async function startChat({ code, role, onPeerChange, onTransportChange, r
     revealChat();
   }
 
-  return { connection, transport };
+  return { connection, transport, endSession };
 }
 
 /** Há token guardado para este papel nesta sessão? Indica retomada, não entrada nova. */
 export function hasStoredToken(code, role) {
   return recallToken(code, role) !== null;
+}
+
+/** Código como o servidor o conhece: sem espaços e em maiúsculas. */
+export function normalizeCode(raw) {
+  return raw.replace(/\s+/g, '').toUpperCase();
+}
+
+/**
+ * Confere por HTTP se dá para entrar como convidado, antes de abrir a conexão
+ * em tempo real. É daqui que sai a mensagem precisa de erro: o texto que o hub
+ * devolveria vem embrulhado e serve mais como rede de segurança para corrida.
+ * Devolve o código confirmado pelo servidor.
+ */
+export async function lookupSession(code) {
+  const response = await fetch(`api/sessions/${encodeURIComponent(code)}`);
+
+  if (response.status === 404) {
+    throw new Error('Código não encontrado. A sessão pode ter expirado.');
+  }
+
+  if (response.status === 429) {
+    throw new Error('Muitas tentativas neste minuto. Espere um pouco e tente de novo.');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Não foi possível consultar a sessão (HTTP ${response.status}).`);
+  }
+
+  const session = await response.json();
+
+  // Com token guardado, o convidado registrado somos nós numa conexão anterior:
+  // recarregar a página retoma o lugar em vez de esbarrar nele.
+  if (session.hasGuest && !hasStoredToken(session.code, 'guest')) {
+    throw new Error('Esta sessão já está em uso por outro aparelho.');
+  }
+
+  return session.code;
 }

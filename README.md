@@ -14,7 +14,9 @@ O ShareLink resolve isso com um mini-chat temporário:
 2. A aplicação cria uma sessão e mostra um QR code.
 3. Você aponta a câmera do celular e abre o link.
 4. Os dois dispositivos passam a trocar mensagens e arquivos em tempo real, nos dois sentidos.
-5. Quando a sessão expira por inatividade, o histórico é descartado — nada fica salvo.
+5. Quando qualquer um dos lados clica em **Encerrar**, ou a sessão expira por inatividade, o histórico é descartado — nada fica salvo.
+
+Também dá para fazer o caminho inverso: na página inicial, **"Já tem um código? Entrar em outra sessão"** abre um modal para digitar o código exibido em outro aparelho. E a página de entrada oferece o contrário: **"Não tem um código? Criar uma nova sessão"** leva à página inicial.
 
 ## Fluxo
 
@@ -34,7 +36,7 @@ sequenceDiagram
     Srv-->>Cel: entrega imediata
     Cel->>Srv: mensagem / link
     Srv-->>PC: entrega imediata
-    Note over Srv: Sessão ociosa expira e o histórico é descartado
+    Note over Srv: Encerrar (qualquer lado) ou expirar descarta a sessão e o histórico
 ```
 
 ## Como funciona por dentro
@@ -45,6 +47,7 @@ sequenceDiagram
 - Cada sessão guarda as **últimas 50 mensagens**, reenviadas a quem entra e a quem reconecta.
 - Ao entrar, o participante recebe um **token**. Reconectar cria uma conexão nova, que pode chegar antes de o servidor perceber a queda da anterior; o token é o que permite retomar o próprio lugar sem esbarrar na conexão morta, e sem afrouxar a recusa a um terceiro aparelho. O mesmo token autoriza os endpoints de arquivo, onde não existe `ConnectionId`.
 - Arquivo tem **dois caminhos**: direto entre os aparelhos por WebRTC quando eles se alcançam na rede local, e pelo servidor quando não. A escolha é automática e já está decidida antes de alguém anexar nada.
+- **Encerrar** chama `EndSession` no hub: só quem está na sessão pode, ela sai do `SessionStore` antes do aviso (ninguém rejunta no intervalo) e os dois lados recebem `SessionEnded`, como na expiração.
 - Mensagens vivem só em memória. O único toque em disco é o arquivo enviado pelo servidor, num temporário que some assim que o outro lado o busca. Reiniciar o processo derruba todas as sessões.
 
 ## Requisitos
@@ -197,10 +200,10 @@ share-link/
 │  ├─ SessionStore.cs              # sessões vivas, em memória
 │  └─ SessionCleanupService.cs     # varredura das sessões expiradas
 ├─ Hubs/
-│  ├─ SessionHub.cs                # entrada, saída, mensagens e sinalização
+│  ├─ SessionHub.cs                # entrada, saída, encerramento, mensagens e sinalização
 │  └─ ISessionClient.cs            # contrato tipado do cliente
 ├─ wwwroot/
-│  ├─ index.html                   # anfitrião: QR + chat
+│  ├─ index.html                   # anfitrião: QR + chat, e modal para entrar por código
 │  ├─ join.html                    # convidado: entrada por código + chat
 │  ├─ css/app.css
 │  └─ js/

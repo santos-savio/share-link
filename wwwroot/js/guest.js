@@ -1,6 +1,14 @@
 // Tela do celular: entra numa sessão existente pelo código do QR ou digitado.
 
-import { startChat, setStatus, showError, clearError, hubErrorMessage, hasStoredToken } from './chat.js';
+import {
+  startChat,
+  setStatus,
+  showError,
+  clearError,
+  hubErrorMessage,
+  lookupSession,
+  normalizeCode
+} from './chat.js';
 
 const joinPanel = document.getElementById('join');
 const joinForm = document.getElementById('join-form');
@@ -15,37 +23,6 @@ document.getElementById('restart').addEventListener('click', () => {
   window.location.replace(window.location.pathname);
 });
 
-/**
- * Confere o código por HTTP antes de abrir a conexão em tempo real. É daqui
- * que sai a mensagem precisa de erro: o texto que o hub devolveria vem
- * embrulhado e serve mais como rede de segurança para corrida.
- */
-async function validate(code) {
-  const response = await fetch(`api/sessions/${encodeURIComponent(code)}`);
-
-  if (response.status === 404) {
-    throw new Error('Código não encontrado. A sessão pode ter expirado.');
-  }
-
-  if (response.status === 429) {
-    throw new Error('Muitas tentativas neste minuto. Espere um pouco e tente de novo.');
-  }
-
-  if (!response.ok) {
-    throw new Error(`Não foi possível consultar a sessão (HTTP ${response.status}).`);
-  }
-
-  const session = await response.json();
-
-  // Com token guardado, o convidado registrado somos nós numa conexão anterior:
-  // recarregar a página retoma o lugar em vez de esbarrar nele.
-  if (session.hasGuest && !hasStoredToken(session.code, 'guest')) {
-    throw new Error('Esta sessão já está em uso por outro aparelho.');
-  }
-
-  return session.code;
-}
-
 function showPeer(present) {
   peerNote.hidden = false;
   peerNote.textContent = present ? 'Computador conectado.' : 'Computador desconectado.';
@@ -53,7 +30,7 @@ function showPeer(present) {
 }
 
 async function join(rawCode) {
-  const code = rawCode.trim().toUpperCase();
+  const code = normalizeCode(rawCode);
 
   if (code.length === 0) return;
 
@@ -62,8 +39,14 @@ async function join(rawCode) {
   setStatus('connecting', 'entrando na sessão…');
 
   try {
-    const confirmed = await validate(code);
-    await startChat({ code: confirmed, role: 'guest', onPeerChange: showPeer });
+    const confirmed = await lookupSession(code);
+    await startChat({
+      code: confirmed,
+      role: 'guest',
+      onPeerChange: showPeer,
+      // Com a sessão encerrada, "Computador conectado" seria informação falsa.
+      onEnded: () => { peerNote.hidden = true; }
+    });
     joinPanel.hidden = true;
   } catch (error) {
     setStatus('offline', 'fora da sessão');
@@ -75,7 +58,7 @@ async function join(rawCode) {
 
 // O código digitado à mão vale tanto quanto o do QR; o alfabeto é maiúsculo.
 codeInput.addEventListener('input', () => {
-  codeInput.value = codeInput.value.replace(/\s+/g, '').toUpperCase();
+  codeInput.value = normalizeCode(codeInput.value);
 });
 
 joinForm.addEventListener('submit', event => {
@@ -87,7 +70,7 @@ joinForm.addEventListener('submit', event => {
 const codeFromUrl = new URLSearchParams(window.location.search).get('code');
 
 if (codeFromUrl) {
-  codeInput.value = codeFromUrl.trim().toUpperCase();
+  codeInput.value = normalizeCode(codeFromUrl);
   join(codeInput.value);
 } else {
   setStatus('offline', 'fora da sessão');

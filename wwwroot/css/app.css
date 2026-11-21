@@ -471,3 +471,124 @@ body {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* Encerrar fica no cabeçalho, mas discreto: é ação destrutiva e rara, então
+   não pode disputar atenção com o chat — só se acende ao passar o cursor. */
+.end-session {
+  padding: 0.25rem 0.625rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.end-session:hover,
+.end-session:focus-visible {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.end-session:focus-visible {
+  outline: 2px solid var(--danger);
+  outline-offset: 1px;
+}
+
+.end-session:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Entrar em outra sessão -------------------------------------------------- */
+
+/* Serve a <button> (página inicial) e a <a> (página de entrada). */
+.link-button {
+  display: inline-block;
+  margin-top: 0.75rem;
+  padding: 0.25rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--accent);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.link-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 0.25rem;
+}
+
+/* Pareado, a página já tem uso: oferecer outra sessão aqui só derrubaria o
+   celular que acabou de entrar. */
+.pairing.paired .link-button { display: none; }
+
+.dialog {
+  width: min(22rem, calc(100vw - 2rem));
+  padding: 0;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  text-align: center;
+}
+
+.dialog-body h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.dialog-body .hint { margin: 0; }
+
+.dialog-body .code-input {
+  align-self: center;
+  width: 100%;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.dialog-actions button {
+  padding: 0.5rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.dialog-actions .primary {
+  color: var(--accent-text);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.dialog-actions .secondary {
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.dialog-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.dialog-actions button:focus-visible,
+.dialog-body .code-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

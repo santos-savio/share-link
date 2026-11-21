@@ -50,6 +50,19 @@ O celular precisa estar na mesma rede Wi-Fi.
 - [ ] Digitar o código em minúsculas funciona: o campo converte para maiúsculas.
 - [ ] Um código inexistente mostra "Código não encontrado", com o formulário ainda usável.
 - [ ] Depois do erro, digitar o código certo entra normalmente.
+- [ ] O link "Não tem um código? Criar uma nova sessão" leva à página inicial, que cria a sessão e mostra o QR.
+- [ ] Depois de entrar numa sessão, o link some junto com o formulário.
+
+### 3.1 Pela página inicial
+
+- [ ] Na página do computador, antes de parear, aparece "Já tem um código? Entrar em outra sessão".
+- [ ] O link abre um modal com o campo já focado; `Esc`, **Cancelar** e clique fora fecham.
+- [ ] Código inexistente mostra o erro **dentro do modal**, sem sair da página.
+- [ ] Digitar o código da própria sessão é recusado com aviso.
+- [ ] Um código válido (gerado em outra aba ou aparelho) leva à página de entrada já dentro da sessão.
+- [ ] A sessão que a página inicial tinha criado é encerrada ao sair — o código dela passa a dar "não encontrado".
+- [ ] Depois de pareado, o link some da tela.
+- [ ] Se o celular parear com o modal aberto, o modal fecha sozinho.
 
 ## 4. Recusas
 
@@ -80,14 +93,26 @@ O celular precisa estar na mesma rede Wi-Fi.
 
 - [ ] Recarregar a página do **celular** volta para a mesma sessão, sem acusar
       "sessão em uso" (o token do participante fica guardado na aba).
-- [ ] Recarregar a página do **computador** cria uma sessão nova, com outro
-      código — esse é o comportamento esperado do anfitrião.
+- [ ] Recarregar a página do **computador** volta para a **mesma sessão**, com o
+      mesmo código, e o celular continua conversando com ele.
+- [ ] Depois de encerrar a sessão (ou de ela expirar), **Nova sessão** cria
+      outra com código novo — não tenta retomar a que acabou.
 
 ## 8. Saída
 
 - [ ] Fechar a aba do celular faz o computador anunciar "O celular saiu da sessão".
 - [ ] O QR volta a aparecer no computador.
 - [ ] O celular consegue parear de novo pelo mesmo QR.
+
+### 8.1 Encerrar
+
+- [ ] Com a sessão aberta, os dois lados mostram o botão **Encerrar** no cabeçalho.
+- [ ] Clicar pede confirmação; cancelar não muda nada.
+- [ ] Confirmando no computador, os dois lados mostram "Sessão encerrada: a pedido do computador";
+      compositor e botão de anexo somem e aparece o botão de recomeçar.
+- [ ] Confirmando no celular, a mensagem diz "a pedido do celular".
+- [ ] Depois de encerrada, o código dá "não encontrado" — inclusive recarregando o celular.
+- [ ] Durante "reconectando…" ou "desconectado", o botão Encerrar não aparece.
 
 ## 9. Expiração
 
